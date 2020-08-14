@@ -66,7 +66,7 @@
 
 
 
-namespace Step12
+namespace Step74
 {
   using namespace dealii;
 
@@ -88,36 +88,71 @@ namespace Step12
       {}
     virtual void value_list (const std::vector<Point<dim> > &points,
                              std::vector<double> &values,
-                             const unsigned int component=0) const
-    {
-      switch (test_case)
-        {
-          case convergence_rate :
-            {
-              using numbers::PI;
-              for (unsigned int i=0; i<values.size(); ++i)
-                values[i]= std::sin(2*PI*points[i][0]) * std::sin(2*PI*points[i][1]);
-              break;
-            }
-          case l_singularity :
-            {
-              for (unsigned int i=0; i<values.size(); ++i)
-                values[i]= ref.value(points[i]);
-              break;              
-            }
-          default:
-            {
-              Assert(false, ExcNotImplemented());
-            }             
-        }
-        
-    }
+                             const unsigned int component=0) const;
+    virtual Tensor<1,dim> gradient(const Point<dim> &point,
+                                   const unsigned int component=0) const;
     private:
     Functions::LSingularityFunction ref;
     Test_Case test_case;
 
   };
 
+  template <int dim>
+  void Solution<dim>:: value_list (const std::vector<Point<dim> > &points,
+                                   std::vector<double> &values,
+                                   const unsigned int component) const
+  {
+    switch (this->test_case)
+      {
+        case convergence_rate :
+          {
+            using numbers::PI;
+            for (unsigned int i=0; i<values.size(); ++i)
+              values[i]= std::sin(2*PI*points[i][0]) * std::sin(2*PI*points[i][1]);
+            break;
+          }
+        case l_singularity :
+          {
+            for (unsigned int i=0; i<values.size(); ++i)
+              values[i]= ref.value(points[i]);
+            break;              
+          }
+        default:
+          {
+            Assert(false, ExcNotImplemented());
+          }             
+      }
+      
+  }
+
+
+  template <int dim>
+  Tensor<1,dim> Solution<dim>:: gradient (const Point<dim> &point,
+                                 const unsigned int component) const
+  {
+    switch (this->test_case)
+      {
+        case convergence_rate :
+          {
+            Tensor<1,dim> return_value;
+            using numbers::PI;
+            return_value[0] =2*PI* std::cos(2*PI*point[0]) * std::sin(2*PI*point[1]);
+            return_value[1] =2*PI* std::sin(2*PI*point[0]) * std::cos(2*PI*point[1]);
+            return return_value;
+            break;
+          }
+        case l_singularity :
+          {
+            return ref.gradient (point);
+            break;              
+          }
+        default:
+          {
+            Assert(false, ExcNotImplemented());
+          }             
+      }
+      
+  }
 
 
   template <int dim>
@@ -252,10 +287,10 @@ inline void copy(const CopyData &c,
     void refine_grid ();
     void output_results (const unsigned int cycle) const;
     double compute_penalty(const double h1, const double h2);
-    void compute_errors(double &l2);
+    void compute_errors();
     void compute_error_estimate();
 
-    const Test_Case test_case =  l_singularity;//convergence_rate ;//
+    const Test_Case test_case =  convergence_rate ;//l_singularity;//
     Triangulation<dim>   triangulation;
     const MappingQ1<dim> mapping;
 
@@ -608,7 +643,7 @@ inline void copy(const CopyData &c,
   void SIPGLaplace<dim>::output_results (const unsigned int cycle) const
   {
     // Output of the solution in gnuplot format.
-    std::string filename = "sol_p" + std::to_string(fe.get_degree()) + "-";
+    std::string filename = "sol_Q" + std::to_string(fe.get_degree()) + "-";
     filename += ('0' + cycle );
     
     Assert (cycle < 10, ExcInternalError());
@@ -628,9 +663,10 @@ inline void copy(const CopyData &c,
   }
 
 template <int dim>
-void SIPGLaplace<dim>::compute_errors (double & L2_error) 
+void SIPGLaplace<dim>::compute_errors () 
   {
-    // estimate
+    double L2_error, H1_error;
+
     {
       Vector<float> difference_per_cell (triangulation.n_active_cells());
       VectorTools::integrate_difference (mapping,
@@ -645,10 +681,26 @@ void SIPGLaplace<dim>::compute_errors (double & L2_error)
                                                    difference_per_cell,
                                                    VectorTools::L2_norm);
       std::cout << "   Error in the L2 norm       :     " << L2_error << std::endl;
-      
-      
-
     }
+
+    {
+      Vector<float> difference_per_cell (triangulation.n_active_cells());
+      VectorTools::integrate_difference (mapping,
+                                         dof_handler,
+                                         solution,
+                                         Solution<dim>(test_case),
+                                         difference_per_cell,
+                                         QGauss<dim>(fe.degree+2),
+                                         VectorTools::H1_seminorm);
+
+      H1_error = VectorTools::compute_global_error(triangulation,
+                                                   difference_per_cell,
+                                                   VectorTools::H1_seminorm);
+      std::cout << "   Error in the H1 norm       :     " << H1_error << std::endl;
+    }    
+
+    convergence_table.add_value("L2", L2_error);
+    convergence_table.add_value("H1", H1_error);
   }
   template <int dim>
   void SIPGLaplace<dim>::compute_error_estimate()
@@ -830,8 +882,6 @@ void SIPGLaplace<dim>::compute_errors (double & L2_error)
 template <int dim>
   void SIPGLaplace<dim>::refine_grid ()
   {
-
-    compute_error_estimate();
     const double refinement_fraction = 0.2;
 
     GridRefinement::refine_and_coarsen_fixed_number (triangulation,
@@ -875,7 +925,6 @@ template <int dim>
               else
                 {
                   refine_grid ();
-
                 }
 
               
@@ -898,41 +947,41 @@ template <int dim>
         assemble_system ();
         //assemble_system ();
         solve (solution);
+        compute_error_estimate();
 
         output_results (cycle);
-        double l2_error;
-        compute_errors(l2_error);
-        if(cycle >0 )
         {
           convergence_table.add_value("cycle", cycle);
           convergence_table.add_value("cells", triangulation.n_active_cells());
           convergence_table.add_value("dofs", dof_handler.n_dofs());
-          convergence_table.add_value("L2", l2_error);
-          if(test_case == l_singularity)
-            convergence_table.add_value("Estimator", estimated_error_per_cell.l2_norm());
         }
+        compute_errors();
+
+        if(test_case == l_singularity)
+          convergence_table.add_value("Estimator", estimated_error_per_cell.l2_norm());
+        
         std::cout<<std::endl;
       }
       {
         convergence_table.set_precision("L2", 3);
-        
+        convergence_table.set_precision("H1", 3);
         
         convergence_table.set_scientific("L2", true);
+        convergence_table.set_scientific("H1", true);
         
-        
-        convergence_table.set_tex_caption("cells", "\\# cells");
-        convergence_table.set_tex_caption("dofs", "\\# dofs");
-        convergence_table.set_tex_caption("L2", "$L^2$-error");
-        
-    
-        convergence_table.set_tex_format("cells", "r");
-        convergence_table.set_tex_format("dofs", "r");
-
         if(test_case == l_singularity)
         {
           convergence_table.set_precision("Estimator", 3);
           convergence_table.set_scientific("Estimator", true);
           convergence_table.set_tex_caption("Estimator", "Estimated error");
+        }
+        if(test_case == convergence_rate)
+        {
+          convergence_table.evaluate_convergence_rates(
+            "L2", ConvergenceTable::reduction_rate_log2);
+          convergence_table.evaluate_convergence_rates(
+            "H1", ConvergenceTable::reduction_rate_log2);
+
         }
 
         std::cout<< "degree = "<<fe.get_degree() << std::endl;
@@ -949,7 +998,7 @@ int main ()
 {
   try
     {
-      Step12::SIPGLaplace<2> problem;
+      Step74::SIPGLaplace<2> problem;
       problem.run ();
     }
   catch (std::exception &exc)
