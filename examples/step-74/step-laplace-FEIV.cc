@@ -14,7 +14,7 @@
  * ---------------------------------------------------------------------
 
  *
- * Author: Guido Kanschat, Texas A&M University, 2009
+ * Author: Timo Heister and Jiaqi Zhang, Clemson University, 2020
  */
 
 
@@ -59,15 +59,12 @@
 #include <deal.II/numerics/derivative_approximation.h>
 #include <deal.II/numerics/vector_tools.h>
 #include <deal.II/base/convergence_table.h>
+
+#include <deal.II/meshworker/copy_data.h>
 #include <deal.II/meshworker/mesh_loop.h>
+#include <deal.II/meshworker/scratch_data.h>
 
-// Like in all programs, we finish this section by including the needed C++
-// headers and declaring we want to use objects in the dealii namespace
-// without prefix.
-#include <iostream>
-#include <fstream>
 
-#include "loop_stuff.h"
 
 namespace Step12
 {
@@ -84,10 +81,10 @@ namespace Step12
   class Solution:  public Function<dim>
   {
   public:
-    Solution(Test_Case in_tc)
+    Solution(Test_Case test_case)
       :
       Function<dim>(),
-      test_case(in_tc)
+      test_case(test_case)
       {}
     virtual void value_list (const std::vector<Point<dim> > &points,
                              std::vector<double> &values,
@@ -141,10 +138,10 @@ namespace Step12
   class RHS:  public Function<dim>
   {
   public:
-    RHS(Test_Case in_tc)
+    RHS(Test_Case test_case)
       :
       Function<dim>(),
-      test_case(in_tc)
+      test_case(test_case)
       {}
     virtual void value_list (const std::vector<Point<dim> > &points,
                              std::vector<double> &values,
@@ -180,73 +177,10 @@ namespace Step12
                    
   };
 
-
- /* 
-  template <int dim>
-  class Beta
-  {
-  public:
-    Beta () {}
-    void value_list (const std::vector<Point<dim> > &points,
-                     std::vector<Point<dim> > &values) const;
-  };
-
-  template <int dim>
-  void Beta<dim>::value_list(const std::vector<Point<dim> > &points,
-                             std::vector<Point<dim> > &values) const
-  {
-    Assert(values.size()==points.size(),
-           ExcDimensionMismatch(values.size(),points.size()));
-
-    for (unsigned int i=0; i<points.size(); ++i)
-      {
-        const Point<dim> &p=points[i];
-        Point<dim> &beta=values[i];
-
-        beta(0) = -p(1);
-        beta(1) = p(0);
-        beta /= std::sqrt(beta.square());
-      }
-  }
-*/
-  // @sect3{Equation data}
-  //
-  // First, we define a class describing the inhomogeneous boundary
-  // data. Since only its values are used, we implement value_list(), but
-  // leave all other functions of Function undefined.
-  // template <int dim>
-  // class BoundaryValues:  public Function<dim>
-  // {
-  // public:
-  //   BoundaryValues () {};
-  //   virtual void value_list (const std::vector<Point<dim> > &points,
-  //                            std::vector<double> &values,
-  //                            const unsigned int component=0) const;
-  // };
-
-  // Given the flow direction, the inflow boundary of the unit square
-  // $[0,1]^2$ are the right and the lower boundaries. We prescribe
-  // discontinuous boundary values 1 and 0 on the x-axis and value 0 on the
-  // right boundary. The values of this function on the outflow boundaries
-  // will not be used within the DG scheme.
-  // template <int dim>
-  // void BoundaryValues<dim>::value_list(const std::vector<Point<dim> > &points,
-  //                                      std::vector<double> &values,
-  //                                      const unsigned int) const
-  // {
-  //   Assert(values.size()==points.size(),
-  //          ExcDimensionMismatch(values.size(),points.size()));
-
-  //   for (unsigned int i=0; i<values.size(); ++i)
-  //     {
-  //         values[i] = 0; //sin(2*numbers::PI*points[i](0));
-
-  //     }
-  // }
-  // @sect3{The AdvectionProblem class}
+  // @sect3{The SIPGLaplace class}
   //
   // After this preparations, we proceed with the main class of this program,
-  // called AdvectionProblem. It is basically the main class of step-6. We do
+  // called SIPGLaplace. It is basically the main class of step-6. We do
   // not have a ConstraintMatrix, because there are no hanging node
   // constraints in DG discretizations.
 
@@ -254,64 +188,79 @@ namespace Step12
   // functions, since here, we not only need to cover the flux integrals over
   // faces, we also use the MeshWorker interface to simplify the loops
   // involved.
-template <int dim>
-struct ScratchData1
+
+struct CopyDataFace
 {
-  ScratchData1(const Mapping<dim> &      mapping,
-              const FiniteElement<dim> &fe,
-              const unsigned int        quadrature_degree,
-              const UpdateFlags         update_flags = update_values |
-                                               update_gradients |
-                                               update_quadrature_points |
-                                               update_JxW_values,
-              const UpdateFlags interface_update_flags =
-                update_values | update_gradients | update_quadrature_points |
-                update_JxW_values | update_normal_vectors)
-    : fe_values(mapping, fe, QGauss<dim>(quadrature_degree), update_flags)
-    , fe_interface_values(mapping,
-                          fe,
-                          QGauss<dim - 1>(quadrature_degree),
-                          interface_update_flags)
-  {}
-  ScratchData1(const ScratchData1<dim> &scratch_data)
-    : fe_values(scratch_data.fe_values.get_mapping(),
-                scratch_data.fe_values.get_fe(),
-                scratch_data.fe_values.get_quadrature(),
-                scratch_data.fe_values.get_update_flags())
-    , fe_interface_values(
-        scratch_data.fe_values
-          .get_mapping(), // TODO: implement for fe_interface_values
-        scratch_data.fe_values.get_fe(),
-        scratch_data.fe_interface_values.get_quadrature(),
-        scratch_data.fe_interface_values.get_update_flags())
-  {}
-  FEValues<dim>          fe_values;
-  FEInterfaceValues<dim> fe_interface_values;
+  FullMatrix<double>                   cell_matrix;
+  std::vector<types::global_dof_index> joint_dof_indices;
+  double values[2];
+  unsigned int cell_indices[2];
 };
+
+struct CopyData
+{
+  FullMatrix<double>                   cell_matrix;
+  Vector<double>                       cell_rhs;
+  std::vector<types::global_dof_index> local_dof_indices;
+  std::vector<CopyDataFace> face_data;
+  double value;
+  unsigned int  cell_index; 
+  template<class Iterator>
+  void reinit(const Iterator &cell, unsigned int dofs_per_cell)
+  {
+    cell_matrix.reinit(dofs_per_cell, dofs_per_cell);
+    cell_rhs.reinit(dofs_per_cell);
+    local_dof_indices.resize(dofs_per_cell);
+    cell->get_dof_indices(local_dof_indices);
+  }  
+
+};
+
+template <class MatrixType, class VectorType>
+inline void copy(const CopyData &c,
+          const AffineConstraints<double> &constraints,
+          MatrixType & system_matrix,
+          VectorType & system_rhs)
+{
+  constraints.distribute_local_to_global(c.cell_matrix,
+                                         c.cell_rhs,
+                                         c.local_dof_indices,
+                                         system_matrix,
+                                         system_rhs);
+  for (auto &cdf : c.face_data)
+    {
+      const unsigned int dofs_per_cell   = cdf.joint_dof_indices.size();
+      for (unsigned int i=0; i<dofs_per_cell; ++i)
+        for (unsigned int k=0; k<dofs_per_cell; ++k)
+          system_matrix.add(cdf.joint_dof_indices[i], cdf.joint_dof_indices[k],
+                            cdf.cell_matrix(i,k));
+    }
+}
 
 
   template <int dim>
-  class AdvectionProblem
+  class SIPGLaplace
   {
   public:
-    AdvectionProblem ();
+    SIPGLaplace ();
     void run ();
 
   private:
     void setup_system ();
-    void assemble_system_feinterface ();
     void assemble_system ();
     void solve (Vector<double> &solution);
     void refine_grid ();
     void output_results (const unsigned int cycle) const;
+    double compute_penalty(const double h1, const double h2);
     void compute_errors(double &l2);
-    void compute_error_estimator();
+    void compute_error_estimate();
 
     const Test_Case test_case =  l_singularity;//convergence_rate ;//
     Triangulation<dim>   triangulation;
     const MappingQ1<dim> mapping;
 
     AffineConstraints<double> constraints;
+    using ScratchData = MeshWorker::ScratchData<dim>;
 
     // Furthermore we want to use DG elements of degree 1 (but this is only
     // specified in the constructor). If you want to use a DG method of a
@@ -333,24 +282,13 @@ struct ScratchData1
     Vector<double>       system_rhs;
     Vector<double>       estimated_error_per_cell;
     ConvergenceTable convergence_table;
-
-    // Finally, we have to provide functions that assemble the cell, boundary,
-    // and inner face terms. Within the MeshWorker framework, the loop over
-    // all cells and much of the setup of operations will be done outside this
-    // class, so all we have to provide are these three operations. They will
-    // then work on intermediate objects for which first, we here define
-    // typedefs to the info objects handed to the local integration functions
-    // in order to make our life easier below.
-    typedef MeshWorker::DoFInfo<dim> DoFInfo;
-    typedef MeshWorker::IntegrationInfo<dim> CellInfo;
-
   };
 
 
   // We start with the constructor. The 1 in the constructor call of
   // <code>fe</code> is the polynomial degree.
   template <int dim>
-  AdvectionProblem<dim>::AdvectionProblem ()
+  SIPGLaplace<dim>::SIPGLaplace ()
     :
     mapping (),
     fe (3),
@@ -359,7 +297,7 @@ struct ScratchData1
 
 
   template <int dim>
-  void AdvectionProblem<dim>::setup_system ()
+  void SIPGLaplace<dim>::setup_system ()
   {
     // In the function that sets up the usual finite element data structures,
     // we first need to distribute the DoFs.
@@ -379,23 +317,23 @@ struct ScratchData1
 
     // Finally, we set up the structure of all components of the linear
     // system.
-    system_matrix.reinit (sparsity_pattern);
+    system_matrix.reinit (sparsity_pattern); 
     solution.reinit (dof_handler.n_dofs());
     system_rhs.reinit (dof_handler.n_dofs());
     constraints.close();
   }
 
-  // @sect4{The assemble_system function}
-
-
-
-  // Here we see the major difference to assembling by hand. Instead of
-  // writing loops over cells and faces, we leave all this to the MeshWorker
-  // framework. In order to do so, we just have to define local integration
-  // functions and use one of the classes in namespace MeshWorker::Assembler
-  // to build the global system.
   template <int dim>
-  void AdvectionProblem<dim>::assemble_system_feinterface ()
+  double SIPGLaplace<dim>::compute_penalty (const double h1, const double h2)
+  {
+    const double degree = std::max(1.0, static_cast<double> (fe.get_degree()));
+    return 4.0*degree*(degree+1.0)*0.5*(1.0/h1+1.0/h2);
+  }
+
+
+
+  template <int dim>
+  void SIPGLaplace<dim>::assemble_system ()
   {
 
     typedef decltype(dof_handler.begin_active()) Iterator;
@@ -404,24 +342,23 @@ struct ScratchData1
     const Solution<dim> boundary_function(test_case);
 
     auto cell_worker = [&] (const Iterator &cell, 
-                            ScratchData1<dim> &scratch_data, 
-                            CopyData &copy_data)
+                            ScratchData             &scratch_data, 
+                            CopyData       &copy_data)
     {
-      const unsigned int dofs_per_cell   = scratch_data.fe_values.get_fe().dofs_per_cell;
-      const unsigned int n_q_points      = scratch_data.fe_values.get_quadrature().size();
-
+      const FEValues<dim> &fe_v = scratch_data.reinit(cell); 
+      const unsigned int dofs_per_cell   = fe_v.dofs_per_cell;
       copy_data.reinit(cell, dofs_per_cell);
-
-      scratch_data.fe_values.reinit(cell);
-      const FEValues<dim> &fe_v = scratch_data.fe_values;
-      const std::vector<double> &JxW = fe_v.get_JxW_values ();
-
+      
+      const auto &q_points = scratch_data.get_quadrature_points();
+      const unsigned int n_q_points      = q_points.size();
+      const std::vector<double> &JxW = scratch_data.get_JxW_values ();
+      
       std::vector<double> nu (n_q_points);
-      viscosity_function.value_list (fe_v.get_quadrature_points(), nu);
+      viscosity_function.value_list (q_points, nu);
       std::vector<double> rhs (n_q_points);
-      rhs_function.value_list (fe_v.get_quadrature_points(), rhs);
+      rhs_function.value_list (q_points, rhs);
 
-      for (unsigned int point=0; point<fe_v.n_quadrature_points; ++point)
+      for (unsigned int point=0; point<n_q_points; ++point)
         for (unsigned int i=0; i<fe_v.dofs_per_cell; ++i)
           {
             for (unsigned int j=0; j<fe_v.dofs_per_cell; ++j)
@@ -438,32 +375,32 @@ struct ScratchData1
 
     auto boundary_worker = [&] (const Iterator &cell, 
                                 const unsigned int &face_no, 
-                                ScratchData1<dim> &scratch_data, 
+                                ScratchData &scratch_data, 
                                 CopyData &copy_data)
     {
-      scratch_data.fe_interface_values.reinit(cell, face_no);
-      const FEFaceValuesBase<dim> &fe_fv =
-      scratch_data.fe_interface_values.get_fe_face_values(0);
-      
-      const auto &q_points = fe_fv.get_quadrature_points();
-      
-      const std::vector<double> &JxW = fe_fv.get_JxW_values ();
-      const std::vector<Tensor<1,dim> > &normals = fe_fv.get_normal_vectors ();
+      const FEFaceValuesBase<dim> &fe_fv =scratch_data.reinit(cell, face_no);
+            
+      const auto &q_points = scratch_data.get_quadrature_points();
+      const unsigned int n_q_points = q_points.size();
+      const unsigned int dofs_per_cell = fe_fv.dofs_per_cell;
 
-      std::vector<double> nu (fe_fv.n_quadrature_points);
-      viscosity_function.value_list (fe_fv.get_quadrature_points(), nu);
+      const std::vector<double> &JxW = scratch_data.get_JxW_values ();
+      const std::vector<Tensor<1,dim> > &normals = scratch_data.get_normal_vectors ();
 
-      std::vector<double> g(q_points.size());
+      std::vector<double> nu (n_q_points);
+      viscosity_function.value_list (q_points, nu);
+
+      std::vector<double> g(n_q_points);
       boundary_function.value_list (q_points, g);
 
-      const double degree = std::max(1.0, static_cast<double> (fe_fv.get_fe().degree));
+      
       const double extent1 = cell->extent_in_direction(GeometryInfo<dim>::unit_normal_direction[face_no]);
-      const double penalty = 4.0 * degree * (degree+1.0) / (extent1);
+      const double penalty = compute_penalty(extent1, extent1);
 
-      for (unsigned int point=0; point<q_points.size(); ++point)
+      for (unsigned int point=0; point<n_q_points; ++point)
         {
-          for (unsigned int i=0; i<fe_fv.dofs_per_cell; ++i)
-            for (unsigned int j=0; j<fe_fv.dofs_per_cell; ++j)
+          for (unsigned int i=0; i<dofs_per_cell; ++i)
+            for (unsigned int j=0; j<dofs_per_cell; ++j)
               copy_data.cell_matrix(i,j) +=
                   (
                     // - nu (\nabla u . n) v
@@ -483,7 +420,7 @@ struct ScratchData1
                     * fe_fv.shape_value(i,point)
                     ) * JxW[point];
 
-          for (unsigned int i=0; i<fe_fv.dofs_per_cell; ++i)
+          for (unsigned int i=0; i<dofs_per_cell; ++i)
             copy_data.cell_rhs(i) +=
                 (
                   // -nu g (\nabla v . n) // NIPG: use +
@@ -504,10 +441,10 @@ struct ScratchData1
     auto face_worker = [&]
                        (const Iterator &cell, const unsigned int &f, const unsigned int &sf,
                         const Iterator &ncell, const unsigned int &nf, const unsigned int &nsf,
-                        ScratchData1<dim> &scratch_data, CopyData &copy_data)
+                        ScratchData &scratch_data, CopyData &copy_data)
     {
-      FEInterfaceValues<dim> &fe_iv = scratch_data.fe_interface_values;
-      fe_iv.reinit(cell, f, sf, ncell, nf, nsf);      
+      const FEInterfaceValues<dim> &fe_iv = scratch_data.reinit(cell,f,sf,ncell,nf,nsf);
+      
       const auto &q_points = fe_iv.get_quadrature_points();
       const unsigned int n_q_points = q_points.size();
 
@@ -523,12 +460,11 @@ struct ScratchData1
       std::vector<double> nu (n_q_points);
       viscosity_function.value_list (q_points, nu);
 
-      const double degree = std::max(1.0, static_cast<double>(fe_iv.get_fe().degree));
       const double extent1 = cell->extent_in_direction(GeometryInfo<dim>::unit_normal_direction[f])
           * (cell->has_children() ? 2.0 : 1.0);
       const double extent2 = ncell->extent_in_direction(GeometryInfo<dim>::unit_normal_direction[nf])
           * (ncell->has_children() ? 2.0 : 1.0);
-      const double penalty =4.0 * degree * (degree+1.0) * 0.5 * (1.0/extent1 + 1.0/extent2);
+      const double penalty =compute_penalty(extent1,extent2);
 
       for (unsigned int point=0; point<n_q_points; ++point)
         {
@@ -562,8 +498,17 @@ struct ScratchData1
     };  
 
     const unsigned int n_gauss_points = dof_handler.get_fe().degree+1;
+    QGauss<dim>     quadrature(n_gauss_points);
+    QGauss<dim - 1> face_quadrature(n_gauss_points);
 
-    ScratchData1<dim> scratch_data(mapping, fe, n_gauss_points);
+    UpdateFlags cell_flags = update_values | update_gradients |
+                           update_quadrature_points | update_JxW_values;
+    UpdateFlags face_flags = update_values | update_gradients |
+                           update_quadrature_points | update_normal_vectors |
+                           update_JxW_values;
+
+    ScratchData scratch_data(mapping, fe, quadrature, cell_flags,
+                            face_quadrature, face_flags);
     CopyData cd;
     MeshWorker::mesh_loop(dof_handler.begin_active(),
                           dof_handler.end(),
@@ -579,8 +524,6 @@ struct ScratchData1
 
 
   }
-
-
   // @sect4{The assemble_system function}
 
 
@@ -590,197 +533,7 @@ struct ScratchData1
   // framework. In order to do so, we just have to define local integration
   // functions and use one of the classes in namespace MeshWorker::Assembler
   // to build the global system.
-  template <int dim>
-  void AdvectionProblem<dim>::assemble_system ()
-  {
-
-    typedef decltype(dof_handler.begin_active()) Iterator;
-    const RHS<dim> rhs_function(test_case);
-    const Viscosity<dim> viscosity_function;
-    const Solution<dim> boundary_function(test_case);
-
-    auto cell_worker = [&] (const Iterator &cell, ScratchData<dim> &scratch_data, CopyData &copy_data)
-    {
-      const unsigned int dofs_per_cell   = scratch_data.fe_values.get_fe().dofs_per_cell;
-      const unsigned int n_q_points      = scratch_data.fe_values.get_quadrature().size();
-
-      copy_data.cell_matrix.reinit (dofs_per_cell, dofs_per_cell);
-      copy_data.cell_rhs.reinit (dofs_per_cell);
-
-      copy_data.local_dof_indices.resize(dofs_per_cell);
-      cell->get_dof_indices (copy_data.local_dof_indices);
-
-      scratch_data.reinit (cell);
-
-      const FEValues<dim> &fe_v = scratch_data.fe_values;
-      const std::vector<double> &JxW = fe_v.get_JxW_values ();
-
-      std::vector<double> nu (n_q_points);
-      viscosity_function.value_list (fe_v.get_quadrature_points(), nu);
-      std::vector<double> rhs (n_q_points);
-      rhs_function.value_list (fe_v.get_quadrature_points(), rhs);
-
-      for (unsigned int point=0; point<fe_v.n_quadrature_points; ++point)
-        for (unsigned int i=0; i<fe_v.dofs_per_cell; ++i)
-          {
-            for (unsigned int j=0; j<fe_v.dofs_per_cell; ++j)
-              copy_data.cell_matrix(i,j) +=
-                  // nu \nabla u \nabla v
-                  nu[point]
-                  * fe_v.shape_grad(i,point)
-                  * fe_v.shape_grad(j,point)
-                  * JxW[point];
-
-            copy_data.cell_rhs(i) += rhs[point] * fe_v.shape_value(i,point) * JxW[point];
-          }
-    };
-
-    auto boundary_worker = [&] (const Iterator &cell, const unsigned int &face_no, ScratchData<dim> &scratch_data, CopyData &copy_data)
-    {
-      FEFaceValues<dim> &fe_fv = scratch_data.internal_fe_face_values;
-      fe_fv.reinit(cell, face_no);
-
-      const auto &q_points = fe_fv.get_quadrature_points();
-      
-      const std::vector<double> &JxW = fe_fv.get_JxW_values ();
-      const std::vector<Tensor<1,dim> > &normals = fe_fv.get_normal_vectors ();
-
-      std::vector<double> nu (fe_fv.n_quadrature_points);
-      viscosity_function.value_list (fe_fv.get_quadrature_points(), nu);
-
-      std::vector<double> g(q_points.size());
-      boundary_function.value_list (q_points, g);
-
-      const double degree = std::max(1.0, static_cast<double> (fe_fv.get_fe().degree));
-      const double extent1 = cell->extent_in_direction(GeometryInfo<dim>::unit_normal_direction[face_no]);
-      const double penalty = 4.0 * degree * (degree+1.0) / (extent1);
-
-      for (unsigned int point=0; point<q_points.size(); ++point)
-        {
-          for (unsigned int i=0; i<fe_fv.dofs_per_cell; ++i)
-            for (unsigned int j=0; j<fe_fv.dofs_per_cell; ++j)
-              copy_data.cell_matrix(i,j) +=
-                  (
-                    // - nu (\nabla u . n) v
-                    - nu[point]
-                    * (fe_fv.shape_grad(j,point) * normals[point])
-                    * fe_fv.shape_value(i,point)
-
-                    // - nu u (\nabla v . n)  // NIPG: use +
-                    - nu[point]
-                    * fe_fv.shape_value(j,point)
-                    * (fe_fv.shape_grad(i,point) * normals[point])
-
-                    // + nu * penalty u v
-                    + nu[point]
-                    * penalty
-                    * fe_fv.shape_value(j,point)
-                    * fe_fv.shape_value(i,point)
-                    ) * JxW[point];
-
-          for (unsigned int i=0; i<fe_fv.dofs_per_cell; ++i)
-            copy_data.cell_rhs(i) +=
-                (
-                  // -nu g (\nabla v . n) // NIPG: use +
-                  - nu[point]
-                  * g[point]
-                  * (fe_fv.shape_grad(i,point) * normals[point])
-
-                  // +nu penalty g v
-                  + nu[point]
-                  * penalty
-                  * g[point]
-                  * fe_fv.shape_value(i,point)
-                  ) * JxW[point];
-
-        }
-    };
-
-    auto face_worker = [&]
-                       (const Iterator &cell, const unsigned int &f, const unsigned int &sf,
-                        const Iterator &ncell, const unsigned int &nf, const unsigned int &nsf,
-                        ScratchData<dim> &scratch_data, CopyData &copy_data)
-    {
-      scratch_data.reinit(cell, f, sf, ncell, nf, nsf);
-
-      copy_data.face_data.emplace_back();
-      CopyDataFace &copy_data_face = copy_data.face_data.back();
-      const unsigned int dofs_per_cell   = scratch_data.fe_values.get_fe().dofs_per_cell;
-      std::vector<types::global_dof_index> temp(dofs_per_cell);
-      ncell->get_dof_indices (temp);
-      copy_data_face.joint_dof_indices = copy_data.local_dof_indices;
-      copy_data_face.joint_dof_indices.insert(copy_data_face.joint_dof_indices.end(),
-                                              temp.begin(),
-                                              temp.end());
-
-      copy_data_face.cell_matrix.reinit(2*dofs_per_cell, 2*dofs_per_cell);
-
-      const FEFaceValuesBase<dim> &fe_v = *scratch_data.fe_face_values;
-      const FEFaceValuesBase<dim> &fe_v_neighbor = *scratch_data.fe_face_values_neighbor;
-
-      const std::vector<double> &JxW = fe_v.get_JxW_values ();
-      const std::vector<Tensor<1,dim> > &normals = fe_v.get_normal_vectors ();
-
-      std::vector<double> nu (fe_v.n_quadrature_points);
-      viscosity_function.value_list (fe_v.get_quadrature_points(), nu);
-
-      const double degree = std::max(1.0, static_cast<double>(fe_v.get_fe().degree));
-      const double extent1 = cell->extent_in_direction(GeometryInfo<dim>::unit_normal_direction[f])
-          * (cell->has_children() ? 2.0 : 1.0);
-      const double extent2 = ncell->extent_in_direction(GeometryInfo<dim>::unit_normal_direction[nf])
-          * (ncell->has_children() ? 2.0 : 1.0);
-      const double penalty =4.0 * degree * (degree+1.0) * 0.5 * (1.0/extent1 + 1.0/extent2);
-
-      for (unsigned int point=0; point<fe_v.n_quadrature_points; ++point)
-        {
-          for (unsigned int i=0; i<2*fe_v.dofs_per_cell; ++i)
-            for (unsigned int j=0; j<2*fe_v.dofs_per_cell; ++j)
-              copy_data_face.cell_matrix(i,j) +=
-                  (
-                  // - nu {\nabla u}.n [v] (consistency)
-                  - nu[point]
-                  * (scratch_data.gradient_avg(j, point) * normals[point])
-                  * scratch_data.jump(i, point)
-
-                    // - nu [u] {\nabla v}.n  (symmetry) // NIPG: use +
-                    - nu[point]
-                    * scratch_data.jump(j, point)
-                    * (scratch_data.gradient_avg(i, point) * normals[point])
-
-                    // nu sigma [u] [v] (penalty)
-                    + nu[point] * penalty
-                    * scratch_data.jump(j, point)
-                    * scratch_data.jump(i, point)
-
-                  ) * JxW[point];
-        }
-
-    };
-
-    auto copier = [&] (const CopyData &c)
-    {
-        copy(c, constraints, system_matrix, system_rhs);
-      };
-
-    const unsigned int n_gauss_points = dof_handler.get_fe().degree+1;
-
-    ScratchData<dim> scratch_data(mapping, fe, n_gauss_points);
-    CopyData cd;
-    MeshWorker::mesh_loop(dof_handler.begin_active(),
-                          dof_handler.end(),
-                          cell_worker,
-                          copier,
-                          scratch_data,
-                          cd,
-                          MeshWorker::assemble_own_cells |
-                          MeshWorker::assemble_boundary_faces |
-                          MeshWorker::assemble_own_interior_faces_once,
-                          boundary_worker,
-                          face_worker);
-
-
-  }
-
+  
 
 
   // @sect3{All the rest}
@@ -796,18 +549,16 @@ struct ScratchData1
   // preconditioner (see the PreconditionBlockSOR class with relaxation=1)
   // does a much better job.
   template <int dim>
-  void AdvectionProblem<dim>::solve (Vector<double> &solution)
+  void SIPGLaplace<dim>::solve (Vector<double> &solution)
   {
     bool direct_solve = true;
     if(direct_solve)
       {
         std::cout << "   Solving system..." << std::endl;
-
         SparseDirectUMFPACK A_direct;
         A_direct.initialize(system_matrix);
         A_direct.vmult(solution, system_rhs);
-      }  
-    
+      }
     else
       {
         SolverControl           solver_control (1000, 1e-12);
@@ -854,22 +605,10 @@ struct ScratchData1
   // refined grids and the numerical solutions given in gnuplot format. This
   // was covered in previous examples and will not be further commented on.
   template <int dim>
-  void AdvectionProblem<dim>::output_results (const unsigned int cycle) const
+  void SIPGLaplace<dim>::output_results (const unsigned int cycle) const
   {
-     // Write the grid in eps format.
-    std::string filename = "grid-";
-    filename += ('0' + cycle);
-    Assert (cycle < 10, ExcInternalError());
-
-    filename += ".eps";
-    deallog << "Writing grid to <" << filename << ">" << std::endl;
-    std::ofstream eps_output (filename.c_str());
-
-    GridOut grid_out;
-    grid_out.write_eps (triangulation, eps_output);
-
     // Output of the solution in gnuplot format.
-    filename = "sol_p" + std::to_string(fe.get_degree()) + "-";
+    std::string filename = "sol_p" + std::to_string(fe.get_degree()) + "-";
     filename += ('0' + cycle );
     
     Assert (cycle < 10, ExcInternalError());
@@ -889,7 +628,7 @@ struct ScratchData1
   }
 
 template <int dim>
-void AdvectionProblem<dim>::compute_errors (double & L2_error) 
+void SIPGLaplace<dim>::compute_errors (double & L2_error) 
   {
     // estimate
     {
@@ -912,7 +651,7 @@ void AdvectionProblem<dim>::compute_errors (double & L2_error)
     }
   }
   template <int dim>
-  void AdvectionProblem<dim>::compute_error_estimator()
+  void SIPGLaplace<dim>::compute_error_estimate()
   {
     typedef decltype(dof_handler.begin_active()) Iterator;
     const RHS<dim> rhs_function(test_case);
@@ -921,12 +660,11 @@ void AdvectionProblem<dim>::compute_errors (double & L2_error)
     estimated_error_per_cell.reinit(triangulation.n_active_cells());
 
     auto cell_worker = [&] (const Iterator &cell, 
-                            ScratchData1<dim> &scratch_data, 
+                            ScratchData &scratch_data, 
                             CopyData &copy_data)
     {
-      FEValues<dim> &fe_v = scratch_data.fe_values;
-      fe_v.reinit(cell);
-      
+      const FEValues<dim> &fe_v = scratch_data.reinit(cell);
+            
       copy_data.cell_index = cell->active_cell_index();
       
       const auto & q_points = fe_v.get_quadrature_points();
@@ -937,7 +675,7 @@ void AdvectionProblem<dim>::compute_errors (double & L2_error)
       fe_v.get_function_hessians(solution, hessians);
 
       std::vector<double> nu (n_q_points);
-      viscosity_function.value_list (fe_v.get_quadrature_points(), nu);
+      viscosity_function.value_list (q_points, nu);
       std::vector<double> rhs (n_q_points);
       rhs_function.value_list (q_points, rhs);
 
@@ -952,12 +690,10 @@ void AdvectionProblem<dim>::compute_errors (double & L2_error)
 
     auto boundary_worker = [&] (const Iterator &cell, 
                                 const unsigned int &face_no, 
-                                ScratchData1<dim> &scratch_data, 
+                                ScratchData &scratch_data, 
                                 CopyData &copy_data)
     {
-      scratch_data.fe_interface_values.reinit(cell, face_no);
-      const FEFaceValuesBase<dim> &fe_fv =
-      scratch_data.fe_interface_values.get_fe_face_values(0);
+      const FEFaceValuesBase<dim> &fe_fv = scratch_data.reinit(cell,face_no);
 
       const auto &q_points = fe_fv.get_quadrature_points();
       const unsigned n_q_points = q_points.size();
@@ -975,7 +711,7 @@ void AdvectionProblem<dim>::compute_errors (double & L2_error)
 
       const double degree = std::max(1.0, static_cast<double> (fe_fv.get_fe().degree));
       const double extent1 = cell->extent_in_direction(GeometryInfo<dim>::unit_normal_direction[face_no]);
-      const double penalty = 4.0 * degree * (degree+1.0) / (extent1);
+      const double penalty = compute_penalty(extent1,extent1);
      
       double difference_norm_square = 0;
       for (unsigned int point=0; point<q_points.size(); ++point)
@@ -992,11 +728,10 @@ void AdvectionProblem<dim>::compute_errors (double & L2_error)
                             const Iterator &ncell, 
                             const unsigned int &nf,
                             const unsigned int &nsf,
-                            ScratchData1<dim> &scratch_data,
+                            ScratchData &scratch_data,
                             CopyData &copy_data)
     {
-      FEInterfaceValues<dim> &fe_iv = scratch_data.fe_interface_values;
-      fe_iv.reinit(cell, f, sf, ncell, nf, nsf);  
+      const FEInterfaceValues<dim> &fe_iv = scratch_data.reinit(cell, f, sf, ncell, nf, nsf);  
       
       copy_data.face_data.emplace_back();
       CopyDataFace &copy_data_face = copy_data.face_data.back();
@@ -1032,7 +767,7 @@ void AdvectionProblem<dim>::compute_errors (double & L2_error)
           * (cell->has_children() ? 2.0 : 1.0);
       const double extent2 = ncell->extent_in_direction(GeometryInfo<dim>::unit_normal_direction[nf])
           * (ncell->has_children() ? 2.0 : 1.0);
-      const double penalty =4.0 * degree * (degree+1.0) * 0.5 * (1.0/extent1 + 1.0/extent2);
+      const double penalty = compute_penalty(extent1,extent2);
 
       double flux_jump_square=0;
       double u_jump_square =0;
@@ -1058,16 +793,21 @@ void AdvectionProblem<dim>::compute_errors (double & L2_error)
     };
 
     const unsigned int n_gauss_points = dof_handler.get_fe().degree+1;
+    QGauss<dim>     quadrature(n_gauss_points);
+    QGauss<dim - 1> face_quadrature(n_gauss_points);
 
-    ScratchData1<dim> scratch_data(mapping, fe, n_gauss_points,
-                                  update_hessians | 
-                                  update_quadrature_points |
-                                  update_JxW_values,
-                                  update_values |
-                                  update_gradients | 
-                                  update_quadrature_points |
-                                  update_JxW_values | 
-                                  update_normal_vectors);
+    UpdateFlags cell_flags = update_hessians | 
+                             update_quadrature_points |
+                             update_JxW_values;
+    UpdateFlags face_flags = update_values |
+                             update_gradients | 
+                             update_quadrature_points |
+                             update_JxW_values | 
+                             update_normal_vectors;
+
+    ScratchData scratch_data(mapping, fe, quadrature, cell_flags,
+                            face_quadrature, face_flags);
+
     CopyData cd;
     MeshWorker::mesh_loop(dof_handler.begin_active(),
                           dof_handler.end(),
@@ -1085,16 +825,15 @@ void AdvectionProblem<dim>::compute_errors (double & L2_error)
   }
 
 
+
+
 template <int dim>
-  void AdvectionProblem<dim>::refine_grid ()
+  void SIPGLaplace<dim>::refine_grid ()
   {
-    // The <code>DerivativeApproximation</code> class computes the gradients
-    // to float precision. This is sufficient as they are approximate and
-    // serve as refinement indicators only.
-    compute_error_estimator();
+
+    compute_error_estimate();
     const double refinement_fraction = 0.2;
 
-    // Finally they serve as refinement indicator.
     GridRefinement::refine_and_coarsen_fixed_number (triangulation,
                                                      estimated_error_per_cell,
                                                      refinement_fraction, 0.);
@@ -1102,9 +841,9 @@ template <int dim>
     triangulation.execute_coarsening_and_refinement ();
   }
 
-  // The following <code>run</code> function is similar to previous examples.
+ 
   template <int dim>
-  void AdvectionProblem<dim>::run ()
+  void SIPGLaplace<dim>::run ()
   {
     unsigned int max_cycle = test_case==convergence_rate? 6: 9;
     for (unsigned int cycle=0; cycle<max_cycle; ++cycle)
@@ -1118,14 +857,12 @@ template <int dim>
               if (cycle == 0)
                 {
                   GridGenerator::hyper_cube (triangulation);
-                  //GridGenerator::hyper_L (triangulation);
-
+                  
                   triangulation.refine_global (2);
                 }
               else{
                   triangulation.refine_global (1);
-                  //refine_grid ();
-              }              
+                  }              
               break;
             }
             case l_singularity:
@@ -1138,8 +875,7 @@ template <int dim>
               else
                 {
                   refine_grid ();
-                  
-                  //triangulation.refine_global (1);
+
                 }
 
               
@@ -1159,7 +895,7 @@ template <int dim>
                 << dof_handler.n_dofs()
                 << std::endl;
 
-        assemble_system_feinterface ();
+        assemble_system ();
         //assemble_system ();
         solve (solution);
 
@@ -1211,11 +947,10 @@ template <int dim>
 // well, and need not be commented on.
 int main ()
 {
-  dealii::deallog.depth_console(99);
   try
     {
-      Step12::AdvectionProblem<2> dgmethod;
-      dgmethod.run ();
+      Step12::SIPGLaplace<2> problem;
+      problem.run ();
     }
   catch (std::exception &exc)
     {
