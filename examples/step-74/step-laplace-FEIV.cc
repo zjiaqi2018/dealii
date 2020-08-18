@@ -289,8 +289,14 @@ inline void copy(const CopyData &c,
     double compute_penalty(const double h1, const double h2);
     void compute_errors();
     void compute_error_estimate();
-
-    const Test_Case test_case =  convergence_rate ;//l_singularity;//
+    double compute_energy_norm();
+    void get_interface_values(const FEInterfaceValues<dim> &fe_iv,
+                              const Vector<double>         solution,
+                              std::vector<double>          face_values[2]);
+    void get_interface_gradients(const FEInterfaceValues<dim> &fe_iv,
+                                 const Vector<double>         solution,
+                                 std::vector<Tensor<1,dim>>   face_gradients[2]);
+    const Test_Case test_case = l_singularity;// convergence_rate ;//
     Triangulation<dim>   triangulation;
     const MappingQ1<dim> mapping;
 
@@ -316,6 +322,7 @@ inline void copy(const CopyData &c,
     Vector<double>       solution;
     Vector<double>       system_rhs;
     Vector<double>       estimated_error_per_cell;
+    Vector<double>       energy_norm_per_cell;
     ConvergenceTable convergence_table;
   };
 
@@ -330,6 +337,31 @@ inline void copy(const CopyData &c,
     dof_handler (triangulation)
   {}
 
+  template <int dim>
+  void SIPGLaplace<dim>::get_interface_values(const FEInterfaceValues<dim> &fe_iv,
+                                              const Vector<double>         solution,
+                                              std::vector<double>          face_values[2])
+  {
+    const unsigned n_q = fe_iv.n_quadrature_points;
+    for(unsigned i=0; i<2; ++i)
+      {
+        face_values[i].resize(n_q);
+        fe_iv.get_fe_face_values(i).get_function_values(solution, face_values[i]);
+      }
+  }
+
+  template <int dim>
+  void SIPGLaplace<dim>::get_interface_gradients(const FEInterfaceValues<dim> &fe_iv,
+                                                 const Vector<double>         solution,
+                                                 std::vector<Tensor<1,dim>>   face_gradients[2])
+  {
+    const unsigned n_q = fe_iv.n_quadrature_points;
+    for(unsigned i=0; i<2; ++i)
+      {
+        face_gradients[i].resize(n_q);
+        fe_iv.get_fe_face_values(i).get_function_gradients(solution, face_gradients[i]);
+      }
+  }
 
   template <int dim>
   void SIPGLaplace<dim>::setup_system ()
@@ -362,7 +394,7 @@ inline void copy(const CopyData &c,
   double SIPGLaplace<dim>::compute_penalty (const double h1, const double h2)
   {
     const double degree = std::max(1.0, static_cast<double> (fe.get_degree()));
-    return 4.0*degree*(degree+1.0)*0.5*(1.0/h1+1.0/h2);
+    return degree*(degree+1.0)*0.5*(1.0/h1+1.0/h2);
   }
 
 
@@ -701,7 +733,10 @@ void SIPGLaplace<dim>::compute_errors ()
 
     convergence_table.add_value("L2", L2_error);
     convergence_table.add_value("H1", H1_error);
+    const double energy_error = compute_energy_norm();
+    convergence_table.add_value("Energy", energy_error);
   }
+  
   template <int dim>
   void SIPGLaplace<dim>::compute_error_estimate()
   {
@@ -761,17 +796,16 @@ void SIPGLaplace<dim>::compute_errors ()
       std::vector<double> sol_u(n_q_points);
       fe_fv.get_function_values(solution, sol_u);
 
-      const double degree = std::max(1.0, static_cast<double> (fe_fv.get_fe().degree));
       const double extent1 = cell->extent_in_direction(GeometryInfo<dim>::unit_normal_direction[face_no]);
       const double penalty = compute_penalty(extent1,extent1);
      
-      double difference_norm_square = 0;
+      double difference_norm_square = 0.0;
       for (unsigned int point=0; point<q_points.size(); ++point)
         {
           const double diff= (g[point]-sol_u[point]);
           difference_norm_square += diff*diff*JxW[point];
         }
-        copy_data.value +=std::sqrt(penalty*difference_norm_square);
+        copy_data.value +=std::sqrt(2.0*penalty*difference_norm_square);
     };
 
     auto face_worker = [&] (const Iterator &cell, 
@@ -802,19 +836,19 @@ void SIPGLaplace<dim>::compute_errors ()
       
       std::vector<Tensor<1, dim>> grad_u[2];
       std::vector<double> sol_u[2];
+      get_interface_values(fe_iv, solution, sol_u);
+      get_interface_gradients(fe_iv, solution, grad_u);
+      const double h = cell->face(f)->diameter();
+      // for(unsigned int i = 0; i < 2; ++i)
+      // {
+      //   grad_u[i].resize(n_q_points);
+      //   sol_u[i].resize(n_q_points);
+      //   fe_iv.get_fe_face_values(i).get_function_values(
+      //   solution, sol_u[i]);
+      //   fe_iv.get_fe_face_values(i).get_function_gradients(
+      //   solution, grad_u[i]);
+      // }
 
-      const double h = cell->face(f)->measure();
-      for(unsigned int i = 0; i < 2; ++i)
-      {
-        grad_u[i].resize(n_q_points);
-        sol_u[i].resize(n_q_points);
-        fe_iv.get_fe_face_values(i).get_function_values(
-        solution, sol_u[i]);
-        fe_iv.get_fe_face_values(i).get_function_gradients(
-        solution, grad_u[i]);
-      }
-
-      const double degree = std::max(1.0, static_cast<double>(fe_iv.get_fe().degree));
       const double extent1 = cell->extent_in_direction(GeometryInfo<dim>::unit_normal_direction[f])
           * (cell->has_children() ? 2.0 : 1.0);
       const double extent2 = ncell->extent_in_direction(GeometryInfo<dim>::unit_normal_direction[nf])
@@ -877,12 +911,180 @@ void SIPGLaplace<dim>::compute_errors ()
   }
 
 
+  template <int dim>
+  double SIPGLaplace<dim>::compute_energy_norm()
+  {
+    typedef decltype(dof_handler.begin_active()) Iterator;
+    const Viscosity<dim> viscosity_function;
+    const Solution<dim> boundary_function(test_case);
+    energy_norm_per_cell.reinit(triangulation.n_active_cells());
+
+    auto cell_worker = [&] (const Iterator &cell, 
+                            ScratchData &scratch_data, 
+                            CopyData &copy_data)
+    {
+      const FEValues<dim> &fe_v = scratch_data.reinit(cell);
+            
+      copy_data.cell_index = cell->active_cell_index();
+      
+      const auto & q_points = fe_v.get_quadrature_points();
+      const unsigned int n_q_points = q_points.size();
+      const std::vector<double> &JxW = fe_v.get_JxW_values ();
+
+      std::vector<Tensor<1, dim>> grad_u(n_q_points);
+      fe_v.get_function_gradients(solution, grad_u);
+
+      std::vector<double> nu (n_q_points);
+      viscosity_function.value_list (q_points, nu);
+      std::vector<Tensor<1,dim>> grad_exact(n_q_points);
+      boundary_function.gradient_list(q_points, grad_exact);
+
+      double norm_square = 0;
+      for (unsigned int point=0; point<n_q_points; ++point)
+        {
+          double tmp = 0.0;
+          for(unsigned int d=0; d<dim; ++d)
+            {
+              const double diff = grad_u[point][d]-grad_exact[point][d];
+              tmp += diff*diff;
+            }
+          norm_square += tmp*JxW[point];
+        }
+        copy_data.value =std::sqrt(norm_square);
+    };
+
+    auto boundary_worker = [&] (const Iterator &cell, 
+                                const unsigned int &face_no, 
+                                ScratchData &scratch_data, 
+                                CopyData &copy_data)
+    {
+      const FEFaceValuesBase<dim> &fe_fv = scratch_data.reinit(cell,face_no);
+
+      const auto &q_points = fe_fv.get_quadrature_points();
+      const unsigned n_q_points = q_points.size();
+      
+      const std::vector<double> &JxW = fe_fv.get_JxW_values ();
+      
+      std::vector<double> nu (n_q_points);
+      viscosity_function.value_list (q_points, nu);
+
+      std::vector<double> g(n_q_points);
+      boundary_function.value_list (q_points, g);
+
+      std::vector<double> sol_u(n_q_points);
+      fe_fv.get_function_values(solution, sol_u);
+
+      const double extent1 = cell->extent_in_direction(GeometryInfo<dim>::unit_normal_direction[face_no]);
+      const double penalty = compute_penalty(extent1,extent1);
+     
+      double difference_norm_square = 0.0;
+      for (unsigned int point=0; point<q_points.size(); ++point)
+        {
+          const double diff= (g[point]-sol_u[point]);
+          difference_norm_square += diff*diff*JxW[point];
+        }
+        copy_data.value +=std::sqrt(2.0*penalty*difference_norm_square);
+    };
+
+    auto face_worker = [&] (const Iterator &cell, 
+                            const unsigned int &f, 
+                            const unsigned int &sf,
+                            const Iterator &ncell, 
+                            const unsigned int &nf,
+                            const unsigned int &nsf,
+                            ScratchData &scratch_data,
+                            CopyData &copy_data)
+    {
+      const FEInterfaceValues<dim> &fe_iv = scratch_data.reinit(cell, f, sf, ncell, nf, nsf);  
+      
+      copy_data.face_data.emplace_back();
+      CopyDataFace &copy_data_face = copy_data.face_data.back();
+      
+      copy_data_face.cell_indices[0] = cell->active_cell_index();
+      copy_data_face.cell_indices[1] = ncell->active_cell_index();
+
+      const std::vector<double> &JxW = fe_iv.get_JxW_values ();
+      
+      const auto &q_points = fe_iv.get_quadrature_points();
+      const unsigned int n_q_points = q_points.size();
+
+      std::vector<double> nu (n_q_points);
+      viscosity_function.value_list (q_points, nu);
+      
+      std::vector<double> sol_u[2];
+
+       for(unsigned int i = 0; i < 2; ++i)
+      {
+        sol_u[i].resize(n_q_points);
+        fe_iv.get_fe_face_values(i).get_function_values(
+        solution, sol_u[i]);
+      }
+
+      const double extent1 = cell->extent_in_direction(GeometryInfo<dim>::unit_normal_direction[f])
+          * (cell->has_children() ? 2.0 : 1.0);
+      const double extent2 = ncell->extent_in_direction(GeometryInfo<dim>::unit_normal_direction[nf])
+          * (ncell->has_children() ? 2.0 : 1.0);
+      const double penalty = compute_penalty(extent1,extent2);
+
+      double u_jump_square =0;
+      for (unsigned int point=0; point<n_q_points; ++point)
+        {
+          const double u_jump = sol_u[0][point]-sol_u[1][point];
+          u_jump_square += u_jump*u_jump*JxW[point];
+        }
+        copy_data_face.values[0] = 0.5*std::sqrt(penalty*u_jump_square);
+        copy_data_face.values[1] = copy_data_face.values[0];
+    };
+    
+    auto copier = [&](const CopyData &copy_data) 
+    {
+      if (copy_data.cell_index != numbers::invalid_unsigned_int)
+        energy_norm_per_cell[copy_data.cell_index] += copy_data.value;
+      for (auto &cdf : copy_data.face_data)
+        for (unsigned int j = 0; j < 2; ++j)
+          energy_norm_per_cell[cdf.cell_indices[j]] += cdf.values[j];
+    };
+
+    const unsigned int n_gauss_points = dof_handler.get_fe().degree+1;
+    QGauss<dim>     quadrature(n_gauss_points);
+    QGauss<dim - 1> face_quadrature(n_gauss_points);
+
+    UpdateFlags cell_flags = update_gradients | 
+                             update_quadrature_points |
+                             update_JxW_values;
+    UpdateFlags face_flags = update_values |
+                             update_quadrature_points |
+                             update_JxW_values;
+                             
+
+    ScratchData scratch_data(mapping, fe, quadrature, cell_flags,
+                            face_quadrature, face_flags);
+
+    CopyData cd;
+    MeshWorker::mesh_loop(dof_handler.begin_active(),
+                          dof_handler.end(),
+                          cell_worker,
+                          copier,
+                          scratch_data,
+                          cd,
+                          MeshWorker::assemble_own_cells |
+                          MeshWorker::assemble_own_interior_faces_once|
+                          MeshWorker::assemble_boundary_faces,
+                          boundary_worker,
+                          face_worker
+                          );
+    const double energy_err = energy_norm_per_cell.l2_norm();
+    std::cout<<"energy norm error: "<<energy_err<<std::endl;
+    return  energy_err;
+    
+  }
+
 
 
 template <int dim>
   void SIPGLaplace<dim>::refine_grid ()
   {
-    const double refinement_fraction = 0.2;
+    const double refinement_fraction = 0.1;
 
     GridRefinement::refine_and_coarsen_fixed_number (triangulation,
                                                      estimated_error_per_cell,
@@ -895,7 +1097,7 @@ template <int dim>
   template <int dim>
   void SIPGLaplace<dim>::run ()
   {
-    unsigned int max_cycle = test_case==convergence_rate? 6: 9;
+    unsigned int max_cycle = test_case==convergence_rate? 6: 10;
     for (unsigned int cycle=0; cycle<max_cycle; ++cycle)
       {
         deallog << "Cycle " << cycle << std::endl;
@@ -947,7 +1149,6 @@ template <int dim>
         assemble_system ();
         //assemble_system ();
         solve (solution);
-        compute_error_estimate();
 
         output_results (cycle);
         {
@@ -956,6 +1157,7 @@ template <int dim>
           convergence_table.add_value("dofs", dof_handler.n_dofs());
         }
         compute_errors();
+        compute_error_estimate();        
 
         if(test_case == l_singularity)
           convergence_table.add_value("Estimator", estimated_error_per_cell.l2_norm());
@@ -965,15 +1167,16 @@ template <int dim>
       {
         convergence_table.set_precision("L2", 3);
         convergence_table.set_precision("H1", 3);
+        convergence_table.set_precision("Energy", 3);
         
         convergence_table.set_scientific("L2", true);
         convergence_table.set_scientific("H1", true);
+        convergence_table.set_scientific("Energy", true);
         
         if(test_case == l_singularity)
         {
           convergence_table.set_precision("Estimator", 3);
           convergence_table.set_scientific("Estimator", true);
-          convergence_table.set_tex_caption("Estimator", "Estimated error");
         }
         if(test_case == convergence_rate)
         {
