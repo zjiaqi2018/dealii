@@ -47,15 +47,11 @@
 #include <deal.II/fe/fe_dgq.h>
 #include <deal.II/fe/fe_q.h>
 #include <deal.II/fe/fe_interface_values.h>
-// We are going to use the simplest possible solver, called Richardson
-// iteration, that represents a simple defect correction. This, in combination
-// with a block SSOR preconditioner (defined in precondition_block.h), that
-// uses the special block matrix structure of system matrices arising from DG
-// discretizations.
+
 #include <deal.II/lac/solver_gmres.h>
 #include <deal.II/lac/precondition_block.h>
 #include <deal.II/lac/precondition.h>
-// We are going to use gradients as refinement indicator.
+
 #include <deal.II/numerics/derivative_approximation.h>
 #include <deal.II/numerics/vector_tools.h>
 #include <deal.II/base/convergence_table.h>
@@ -154,21 +150,6 @@ namespace Step74
       
   }
 
-
-  template <int dim>
-  class Viscosity:  public Function<dim>
-  {
-  public:
-    virtual void value_list (const std::vector<Point<dim> > &points,
-                             std::vector<double> &values,
-                             const unsigned int component=0) const
-    {
-      for (unsigned int i=0; i<values.size(); ++i)
-        values[i]=1.0;
-    }
-  }; 
-
-
   template <int dim>
   class RHS:  public Function<dim>
   {
@@ -194,7 +175,7 @@ namespace Step74
             case l_singularity :
               {
                 for (unsigned int i=0; i<values.size(); ++i)
-                  //assuming that viscosity nu =1
+                  //assuming that viscosity (nu) =1
                   values[i]= ref.laplacian(points[i]);
                 break;              
               }
@@ -253,9 +234,9 @@ struct CopyData
 
 template <class MatrixType, class VectorType>
 inline void copy(const CopyData &c,
-          const AffineConstraints<double> &constraints,
-          MatrixType & system_matrix,
-          VectorType & system_rhs)
+                 const AffineConstraints<double> &constraints,
+                 MatrixType & system_matrix,
+                 VectorType & system_rhs)
 {
   constraints.distribute_local_to_global(c.cell_matrix,
                                          c.cell_rhs,
@@ -293,9 +274,21 @@ inline void copy(const CopyData &c,
     void get_interface_values(const FEInterfaceValues<dim> &fe_iv,
                               const Vector<double>         solution,
                               std::vector<double>          face_values[2]);
+    void get_interface_jump(const FEInterfaceValues<dim> &fe_iv,
+                            const Vector<double>         solution,
+                            std::vector<double>          &jump);
+    void get_interface_average(const FEInterfaceValues<dim> &fe_iv,
+                               const Vector<double>         solution,
+                               std::vector<double>          &average);
     void get_interface_gradients(const FEInterfaceValues<dim> &fe_iv,
                                  const Vector<double>         solution,
                                  std::vector<Tensor<1,dim>>   face_gradients[2]);
+    void get_interface_gradient_jump(const FEInterfaceValues<dim> &fe_iv,
+                                     const Vector<double>         solution,
+                                     std::vector<Tensor<1,dim>>   &gradient_jump);
+    void get_interface_gradient_average(const FEInterfaceValues<dim> &fe_iv,
+                                        const Vector<double>         solution,
+                                        std::vector<Tensor<1,dim>>   &gradient_average);                                     
     const Test_Case test_case = l_singularity;// convergence_rate ;//
     Triangulation<dim>   triangulation;
     const MappingQ1<dim> mapping;
@@ -324,6 +317,7 @@ inline void copy(const CopyData &c,
     Vector<double>       estimated_error_per_cell;
     Vector<double>       energy_norm_per_cell;
     ConvergenceTable convergence_table;
+    const double  viscosity = 1.0;
   };
 
 
@@ -336,7 +330,9 @@ inline void copy(const CopyData &c,
     fe (3),
     dof_handler (triangulation)
   {}
-
+  //This function can be put in the FEInterfaceValues, and can be used just like get_function_values
+  //std::vector<double>          face_values[2]
+  //fe_iv.get_interface_values(solution, face_values)
   template <int dim>
   void SIPGLaplace<dim>::get_interface_values(const FEInterfaceValues<dim> &fe_iv,
                                               const Vector<double>         solution,
@@ -348,6 +344,41 @@ inline void copy(const CopyData &c,
         face_values[i].resize(n_q);
         fe_iv.get_fe_face_values(i).get_function_values(solution, face_values[i]);
       }
+  }
+
+  template<int dim>
+  void SIPGLaplace<dim>::get_interface_average(const FEInterfaceValues<dim> &fe_iv,
+                                               const Vector<double>         solution,
+                                               std::vector<double>          &average)
+  {
+    const unsigned n_q = fe_iv.n_quadrature_points;
+    std::vector<double> face_values[2];
+    average.resize(n_q);
+    for(unsigned i=0; i<2; ++i)
+      {
+        face_values[i].resize(n_q);
+        fe_iv.get_fe_face_values(i).get_function_values(solution, face_values[i]);
+      }
+    for(unsigned int q=0; q<n_q; ++q)
+      average[q] = 0.5*(face_values[0][q] + face_values[1][q]);
+
+  }
+
+  template <int dim>
+  void SIPGLaplace<dim>::get_interface_jump(const FEInterfaceValues<dim> &fe_iv,
+                                            const Vector<double>         solution,
+                                            std::vector<double>          &jump)
+  {
+    const unsigned n_q = fe_iv.n_quadrature_points;
+    std::vector<double> face_values[2];
+    jump.resize(n_q);
+    for(unsigned i=0; i<2; ++i)
+      {
+        face_values[i].resize(n_q);
+        fe_iv.get_fe_face_values(i).get_function_values(solution, face_values[i]);
+      }
+    for(unsigned int q=0; q<n_q; ++q)
+      jump[q] = face_values[0][q] - face_values[1][q];
   }
 
   template <int dim>
@@ -362,6 +393,42 @@ inline void copy(const CopyData &c,
         fe_iv.get_fe_face_values(i).get_function_gradients(solution, face_gradients[i]);
       }
   }
+
+  template <int dim>
+  void SIPGLaplace<dim>::get_interface_gradient_jump(const FEInterfaceValues<dim> &fe_iv,
+                                                     const Vector<double>         solution,
+                                                     std::vector<Tensor<1,dim>>   &gradient_jump)
+  {
+    const unsigned n_q = fe_iv.n_quadrature_points;
+    std::vector<Tensor<1,dim>>   face_gradients[2];
+    gradient_jump.resize(n_q);
+    for(unsigned i=0; i<2; ++i)
+      {
+        face_gradients[i].resize(n_q);
+        fe_iv.get_fe_face_values(i).get_function_gradients(solution, face_gradients[i]);
+      }
+    for(unsigned int q=0; q<n_q; ++q)
+      gradient_jump[q] = face_gradients[0][q] - face_gradients[1][q];
+  }
+
+
+  template <int dim>
+  void SIPGLaplace<dim>::get_interface_gradient_average(const FEInterfaceValues<dim> &fe_iv,
+                                                        const Vector<double>         solution,
+                                                        std::vector<Tensor<1,dim>>   &gradient_average)
+  {
+    const unsigned n_q = fe_iv.n_quadrature_points;
+    std::vector<Tensor<1,dim>>   face_gradients[2];
+    gradient_average.resize(n_q);
+    for(unsigned i=0; i<2; ++i)
+      {
+        face_gradients[i].resize(n_q);
+        fe_iv.get_fe_face_values(i).get_function_gradients(solution, face_gradients[i]);
+      }
+    for(unsigned int q=0; q<n_q; ++q)
+      gradient_average[q] = 0.5*(face_gradients[0][q] + face_gradients[1][q]);
+  }
+
 
   template <int dim>
   void SIPGLaplace<dim>::setup_system ()
@@ -405,7 +472,6 @@ inline void copy(const CopyData &c,
 
     typedef decltype(dof_handler.begin_active()) Iterator;
     const RHS<dim> rhs_function(test_case);
-    const Viscosity<dim> viscosity_function;
     const Solution<dim> boundary_function(test_case);
 
     auto cell_worker = [&] (const Iterator &cell, 
@@ -420,8 +486,6 @@ inline void copy(const CopyData &c,
       const unsigned int n_q_points      = q_points.size();
       const std::vector<double> &JxW = scratch_data.get_JxW_values ();
       
-      std::vector<double> nu (n_q_points);
-      viscosity_function.value_list (q_points, nu);
       std::vector<double> rhs (n_q_points);
       rhs_function.value_list (q_points, rhs);
 
@@ -431,7 +495,7 @@ inline void copy(const CopyData &c,
             for (unsigned int j=0; j<fe_v.dofs_per_cell; ++j)
               copy_data.cell_matrix(i,j) +=
                   // nu \nabla u \nabla v
-                  nu[point]
+                  viscosity
                   * fe_v.shape_grad(i,point)
                   * fe_v.shape_grad(j,point)
                   * JxW[point];
@@ -454,9 +518,6 @@ inline void copy(const CopyData &c,
       const std::vector<double> &JxW = scratch_data.get_JxW_values ();
       const std::vector<Tensor<1,dim> > &normals = scratch_data.get_normal_vectors ();
 
-      std::vector<double> nu (n_q_points);
-      viscosity_function.value_list (q_points, nu);
-
       std::vector<double> g(n_q_points);
       boundary_function.value_list (q_points, g);
 
@@ -471,17 +532,17 @@ inline void copy(const CopyData &c,
               copy_data.cell_matrix(i,j) +=
                   (
                     // - nu (\nabla u . n) v
-                    - nu[point]
+                    - viscosity
                     * (fe_fv.shape_grad(j,point) * normals[point])
                     * fe_fv.shape_value(i,point)
 
                     // - nu u (\nabla v . n)  // NIPG: use +
-                    - nu[point]
+                    - viscosity
                     * fe_fv.shape_value(j,point)
                     * (fe_fv.shape_grad(i,point) * normals[point])
 
                     // + nu * penalty u v
-                    + nu[point]
+                    + viscosity
                     * penalty
                     * fe_fv.shape_value(j,point)
                     * fe_fv.shape_value(i,point)
@@ -491,12 +552,12 @@ inline void copy(const CopyData &c,
             copy_data.cell_rhs(i) +=
                 (
                   // -nu g (\nabla v . n) // NIPG: use +
-                  - nu[point]
+                  - viscosity
                   * g[point]
                   * (fe_fv.shape_grad(i,point) * normals[point])
 
                   // +nu penalty g v
-                  + nu[point]
+                  + viscosity
                   * penalty
                   * g[point]
                   * fe_fv.shape_value(i,point)
@@ -524,9 +585,6 @@ inline void copy(const CopyData &c,
       const std::vector<double> &JxW = fe_iv.get_JxW_values ();
       const std::vector<Tensor<1,dim> > &normals = fe_iv.get_normal_vectors ();
 
-      std::vector<double> nu (n_q_points);
-      viscosity_function.value_list (q_points, nu);
-
       const double extent1 = cell->extent_in_direction(GeometryInfo<dim>::unit_normal_direction[f])
           * (cell->has_children() ? 2.0 : 1.0);
       const double extent2 = ncell->extent_in_direction(GeometryInfo<dim>::unit_normal_direction[nf])
@@ -540,17 +598,17 @@ inline void copy(const CopyData &c,
               copy_data_face.cell_matrix(i,j) +=
                   (
                   // - nu {\nabla u}.n [v] (consistency)
-                  - nu[point]
+                  - viscosity
                   * (fe_iv.average_gradient(j, point) * normals[point])
                   * fe_iv.jump(i, point)
 
                     // - nu [u] {\nabla v}.n  (symmetry) // NIPG: use +
-                    - nu[point]
+                    - viscosity
                     * fe_iv.jump(j, point)
                     * (fe_iv.average_gradient(i, point) * normals[point])
 
                     // nu sigma [u] [v] (penalty)
-                    + nu[point] * penalty
+                    + viscosity * penalty
                     * fe_iv.jump(j, point)
                     * fe_iv.jump(i, point)
 
@@ -591,90 +649,21 @@ inline void copy(const CopyData &c,
 
 
   }
-  // @sect4{The assemble_system function}
 
-
-
-  // Here we see the major difference to assembling by hand. Instead of
-  // writing loops over cells and faces, we leave all this to the MeshWorker
-  // framework. In order to do so, we just have to define local integration
-  // functions and use one of the classes in namespace MeshWorker::Assembler
-  // to build the global system.
-  
-
-
-  // @sect3{All the rest}
-  //
-  // For this simple problem we use the simplest possible solver, called
-  // Richardson iteration, that represents a simple defect correction. This,
-  // in combination with a block SSOR preconditioner, that uses the special
-  // block matrix structure of system matrices arising from DG
-  // discretizations. The size of these blocks are the number of DoFs per
-  // cell. Here, we use a SSOR preconditioning as we have not renumbered the
-  // DoFs according to the flow field. If the DoFs are renumbered in the
-  // downstream direction of the flow, then a block Gauss-Seidel
-  // preconditioner (see the PreconditionBlockSOR class with relaxation=1)
-  // does a much better job.
   template <int dim>
   void SIPGLaplace<dim>::solve (Vector<double> &solution)
   {
-    bool direct_solve = true;
-    if(direct_solve)
-      {
-        std::cout << "   Solving system..." << std::endl;
-        SparseDirectUMFPACK A_direct;
-        A_direct.initialize(system_matrix);
-        A_direct.vmult(solution, system_rhs);
-      }
-    else
-      {
-        SolverControl           solver_control (1000, 1e-12);
-        SolverGMRES<>      solver (solver_control);
 
-        // Here we create the preconditioner,
-        // then assign the matrix to it and set the right block size:
-        PreconditionBlockSSOR<SparseMatrix<double> > preconditioner;
-        preconditioner.initialize(system_matrix, fe.dofs_per_cell);
+    std::cout << "   Solving system..." << std::endl;
+    SparseDirectUMFPACK A_direct;
+    A_direct.initialize(system_matrix);
+    A_direct.vmult(solution, system_rhs);
 
-
-        //PreconditionSSOR<SparseMatrix<double> > preconditioner;
-        //preconditioner.initialize(system_matrix, fe.dofs_per_cell);
-
-        // After these preparations we are ready to start the linear solver.
-        solver.solve (system_matrix, solution, system_rhs,
-                      preconditioner);
-      }            
   }
 
-
-  // We refine the grid according to a very simple refinement criterion,
-  // namely an approximation to the gradient of the solution. As here we
-  // consider the DG(1) method (i.e. we use piecewise bilinear shape
-  // functions) we could simply compute the gradients on each cell. But we do
-  // not want to base our refinement indicator on the gradients on each cell
-  // only, but want to base them also on jumps of the discontinuous solution
-  // function over faces between neighboring cells. The simplest way of doing
-  // that is to compute approximative gradients by difference quotients
-  // including the cell under consideration and its neighbors. This is done by
-  // the <code>DerivativeApproximation</code> class that computes the
-  // approximate gradients in a way similar to the
-  // <code>GradientEstimation</code> described in step-9 of this tutorial. In
-  // fact, the <code>DerivativeApproximation</code> class was developed
-  // following the <code>GradientEstimation</code> class of step-9. Relating
-  // to the discussion in step-9, here we consider $h^{1+d/2}|\nabla_h
-  // u_h|$. Furthermore we note that we do not consider approximate second
-  // derivatives because solutions to the linear advection equation are in
-  // general not in $H^2$ but in $H^1$ (to be more precise, in $H^1_\beta$)
-  // only.
-  
-
-  // The output of this program consists of eps-files of the adaptively
-  // refined grids and the numerical solutions given in gnuplot format. This
-  // was covered in previous examples and will not be further commented on.
   template <int dim>
   void SIPGLaplace<dim>::output_results (const unsigned int cycle) const
   {
-    // Output of the solution in gnuplot format.
     std::string filename = "sol_Q" + std::to_string(fe.get_degree()) + "-";
     filename += ('0' + cycle );
     
@@ -742,7 +731,6 @@ void SIPGLaplace<dim>::compute_errors ()
   {
     typedef decltype(dof_handler.begin_active()) Iterator;
     const RHS<dim> rhs_function(test_case);
-    const Viscosity<dim> viscosity_function;
     const Solution<dim> boundary_function(test_case);
     estimated_error_per_cell.reinit(triangulation.n_active_cells());
 
@@ -761,18 +749,18 @@ void SIPGLaplace<dim>::compute_errors ()
       std::vector<Tensor<2, dim>> hessians(n_q_points);
       fe_v.get_function_hessians(solution, hessians);
 
-      std::vector<double> nu (n_q_points);
-      viscosity_function.value_list (q_points, nu);
       std::vector<double> rhs (n_q_points);
       rhs_function.value_list (q_points, rhs);
 
+      const double hk = cell->diameter();
       double residual_norm_square = 0;
+      
       for (unsigned int point=0; point<n_q_points; ++point)
         {
-          const double residual = rhs[point] + nu[point]*trace(hessians[point]);
+          const double residual = rhs[point] + viscosity*trace(hessians[point]);
           residual_norm_square += residual*residual*JxW[point];
         }
-        copy_data.value =cell->diameter()*std::sqrt(  residual_norm_square);
+        copy_data.value =hk*hk*residual_norm_square;
     };
 
     auto boundary_worker = [&] (const Iterator &cell, 
@@ -786,9 +774,6 @@ void SIPGLaplace<dim>::compute_errors ()
       const unsigned n_q_points = q_points.size();
       
       const std::vector<double> &JxW = fe_fv.get_JxW_values ();
-      
-      std::vector<double> nu (n_q_points);
-      viscosity_function.value_list (q_points, nu);
 
       std::vector<double> g(n_q_points);
       boundary_function.value_list (q_points, g);
@@ -805,7 +790,7 @@ void SIPGLaplace<dim>::compute_errors ()
           const double diff= (g[point]-sol_u[point]);
           difference_norm_square += diff*diff*JxW[point];
         }
-        copy_data.value +=std::sqrt(2.0*penalty*difference_norm_square);
+        copy_data.value +=penalty*difference_norm_square;
     };
 
     auto face_worker = [&] (const Iterator &cell, 
@@ -830,24 +815,19 @@ void SIPGLaplace<dim>::compute_errors ()
       
       const auto &q_points = fe_iv.get_quadrature_points();
       const unsigned int n_q_points = q_points.size();
-
-      std::vector<double> nu (n_q_points);
-      viscosity_function.value_list (q_points, nu);
       
       std::vector<Tensor<1, dim>> grad_u[2];
       std::vector<double> sol_u[2];
       get_interface_values(fe_iv, solution, sol_u);
       get_interface_gradients(fe_iv, solution, grad_u);
+
+      // std::vector<double> jump(n_q_points);
+      // get_interface_jump(fe_iv, solution, jump);
+
+      // std::vector<Tensor<1,dim>> grad_jump(n_q_points);
+      // get_interface_gradient_jump(fe_iv, solution, grad_jump);
+
       const double h = cell->face(f)->diameter();
-      // for(unsigned int i = 0; i < 2; ++i)
-      // {
-      //   grad_u[i].resize(n_q_points);
-      //   sol_u[i].resize(n_q_points);
-      //   fe_iv.get_fe_face_values(i).get_function_values(
-      //   solution, sol_u[i]);
-      //   fe_iv.get_fe_face_values(i).get_function_gradients(
-      //   solution, grad_u[i]);
-      // }
 
       const double extent1 = cell->extent_in_direction(GeometryInfo<dim>::unit_normal_direction[f])
           * (cell->has_children() ? 2.0 : 1.0);
@@ -861,11 +841,12 @@ void SIPGLaplace<dim>::compute_errors ()
         {
           const double u_jump = sol_u[0][point]-sol_u[1][point];
           u_jump_square += u_jump*u_jump*JxW[point];
-
+          // u_jump_square += jump[point]*jump[point]*JxW[point];
           const double flux_jump = (grad_u[0][point]-grad_u[1][point])*normals[point];
-          flux_jump_square += nu[point]*flux_jump*flux_jump*JxW[point];
+          // const double flux_jump = grad_jump[point]*normals[point];
+          flux_jump_square += viscosity*flux_jump*flux_jump*JxW[point];
         }
-        copy_data_face.values[0] = 0.5*std::sqrt(h*flux_jump_square + penalty*u_jump_square);
+        copy_data_face.values[0] = 0.5*h*(flux_jump_square + penalty*u_jump_square);
         copy_data_face.values[1] = copy_data_face.values[0];
     };
     
@@ -915,7 +896,6 @@ void SIPGLaplace<dim>::compute_errors ()
   double SIPGLaplace<dim>::compute_energy_norm()
   {
     typedef decltype(dof_handler.begin_active()) Iterator;
-    const Viscosity<dim> viscosity_function;
     const Solution<dim> boundary_function(test_case);
     energy_norm_per_cell.reinit(triangulation.n_active_cells());
 
@@ -934,8 +914,6 @@ void SIPGLaplace<dim>::compute_errors ()
       std::vector<Tensor<1, dim>> grad_u(n_q_points);
       fe_v.get_function_gradients(solution, grad_u);
 
-      std::vector<double> nu (n_q_points);
-      viscosity_function.value_list (q_points, nu);
       std::vector<Tensor<1,dim>> grad_exact(n_q_points);
       boundary_function.gradient_list(q_points, grad_exact);
 
@@ -950,7 +928,7 @@ void SIPGLaplace<dim>::compute_errors ()
             }
           norm_square += tmp*JxW[point];
         }
-        copy_data.value =std::sqrt(norm_square);
+        copy_data.value =norm_square;
     };
 
     auto boundary_worker = [&] (const Iterator &cell, 
@@ -964,9 +942,6 @@ void SIPGLaplace<dim>::compute_errors ()
       const unsigned n_q_points = q_points.size();
       
       const std::vector<double> &JxW = fe_fv.get_JxW_values ();
-      
-      std::vector<double> nu (n_q_points);
-      viscosity_function.value_list (q_points, nu);
 
       std::vector<double> g(n_q_points);
       boundary_function.value_list (q_points, g);
@@ -983,7 +958,7 @@ void SIPGLaplace<dim>::compute_errors ()
           const double diff= (g[point]-sol_u[point]);
           difference_norm_square += diff*diff*JxW[point];
         }
-        copy_data.value +=std::sqrt(2.0*penalty*difference_norm_square);
+        copy_data.value +=penalty*difference_norm_square;
     };
 
     auto face_worker = [&] (const Iterator &cell, 
@@ -1007,9 +982,6 @@ void SIPGLaplace<dim>::compute_errors ()
       
       const auto &q_points = fe_iv.get_quadrature_points();
       const unsigned int n_q_points = q_points.size();
-
-      std::vector<double> nu (n_q_points);
-      viscosity_function.value_list (q_points, nu);
       
       std::vector<double> sol_u[2];
 
@@ -1032,7 +1004,7 @@ void SIPGLaplace<dim>::compute_errors ()
           const double u_jump = sol_u[0][point]-sol_u[1][point];
           u_jump_square += u_jump*u_jump*JxW[point];
         }
-        copy_data_face.values[0] = 0.5*std::sqrt(penalty*u_jump_square);
+        copy_data_face.values[0] = 0.5*penalty*u_jump_square;
         copy_data_face.values[1] = copy_data_face.values[0];
     };
     
@@ -1073,9 +1045,9 @@ void SIPGLaplace<dim>::compute_errors ()
                           boundary_worker,
                           face_worker
                           );
-    const double energy_err = energy_norm_per_cell.l2_norm();
-    std::cout<<"energy norm error: "<<energy_err<<std::endl;
-    return  energy_err;
+    const double energy_error = std::sqrt(energy_norm_per_cell.l1_norm());
+    std::cout<<"energy norm error: "<<energy_error<<std::endl;
+    return  energy_error;
     
   }
 
@@ -1128,18 +1100,11 @@ template <int dim>
                 {
                   refine_grid ();
                 }
-
-              
             }
           }
-
-          
-
-
         deallog << "Number of active cells:       "
                 << triangulation.n_active_cells()
                 << std::endl;
-
         setup_system ();
 
         deallog << "Number of degrees of freedom: "
@@ -1147,9 +1112,7 @@ template <int dim>
                 << std::endl;
 
         assemble_system ();
-        //assemble_system ();
         solve (solution);
-
         output_results (cycle);
         {
           convergence_table.add_value("cycle", cycle);
@@ -1160,7 +1123,7 @@ template <int dim>
         compute_error_estimate();        
 
         if(test_case == l_singularity)
-          convergence_table.add_value("Estimator", estimated_error_per_cell.l2_norm());
+          convergence_table.add_value("Estimator", std::sqrt(estimated_error_per_cell.l1_norm()));
         
         std::cout<<std::endl;
       }
