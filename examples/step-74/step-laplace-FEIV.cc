@@ -270,25 +270,26 @@ namespace Step74
     void   compute_errors();
     void   compute_error_estimate();
     double compute_energy_norm();
-    //The following functions will be moved to FEIV
-    void   get_function_values(const FEInterfaceValues<dim> &fe_iv,
-                                const Vector<double>          &solution,
-                                std::vector<double>           face_values[2]);
-    void   get_function_jump(const FEInterfaceValues<dim> &fe_iv,
-                              const Vector<double>          &solution,
-                              std::vector<double> &         jump);
-    void   get_function_average(const FEInterfaceValues<dim> &fe_iv,
-                                 const Vector<double>          &solution,
-                                 std::vector<double> &         average);
-    void   get_function_gradients(const FEInterfaceValues<dim> &fe_iv,
-                                   const Vector<double>          &solution,
-                                   std::vector<Tensor<1, dim>> face_gradients[2]);
-    void   get_function_gradient_jump(const FEInterfaceValues<dim> &fe_iv,
-                                     const Vector<double>          &solution,
-                                     std::vector<Tensor<1, dim>> & gradient_jump);
-    void   get_function_gradient_average(const FEInterfaceValues<dim> &fe_iv,
-                                        const Vector<double>          &solution,
-                                        std::vector<Tensor<1, dim>> & gradient_average);
+    // The following functions will be moved to FEIV
+    void get_function_values(const FEInterfaceValues<dim> &fe_iv,
+                             const Vector<double> &        solution,
+                             std::vector<double>           face_values[2]);
+    void get_function_jump(const FEInterfaceValues<dim> &fe_iv,
+                           const Vector<double> &        solution,
+                           std::vector<double> &         jump);
+    void get_function_average(const FEInterfaceValues<dim> &fe_iv,
+                              const Vector<double> &        solution,
+                              std::vector<double> &         average);
+    void get_function_gradients(const FEInterfaceValues<dim> &fe_iv,
+                                const Vector<double> &        solution,
+                                std::vector<Tensor<1, dim>> face_gradients[2]);
+    void get_function_gradient_jump(const FEInterfaceValues<dim> &fe_iv,
+                                    const Vector<double> &        solution,
+                                    std::vector<Tensor<1, dim>> &gradient_jump);
+    void get_function_gradient_average(
+      const FEInterfaceValues<dim> &fe_iv,
+      const Vector<double> &        solution,
+      std::vector<Tensor<1, dim>> & gradient_average);
     const Test_Case      test_case;
     Triangulation<dim>   triangulation;
     const MappingQ1<dim> mapping;
@@ -307,8 +308,8 @@ namespace Step74
     // <code>system_matrix</code>.
     SparsityPattern      sparsity_pattern;
     SparseMatrix<double> system_matrix;
-    Vector<double>   solution;
-    Vector<double>   system_rhs;
+    Vector<double>       solution;
+    Vector<double>       system_rhs;
 
 
     Vector<double>   estimated_error_square_per_cell;
@@ -333,8 +334,8 @@ namespace Step74
   template <int dim>
   void
   SIPGLaplace<dim>::get_function_values(const FEInterfaceValues<dim> &fe_iv,
-                                         const Vector<double>         &solution,
-                                         std::vector<double> face_values[2])
+                                        const Vector<double> &        solution,
+                                        std::vector<double> face_values[2])
   {
     const unsigned n_q = fe_iv.n_quadrature_points;
     for (unsigned i = 0; i < 2; ++i)
@@ -348,8 +349,8 @@ namespace Step74
   template <int dim>
   void
   SIPGLaplace<dim>::get_function_average(const FEInterfaceValues<dim> &fe_iv,
-                                          const Vector<double> &solution,
-                                          std::vector<double> &average)
+                                         const Vector<double> &        solution,
+                                         std::vector<double> &         average)
   {
     const unsigned      n_q = fe_iv.n_quadrature_points;
     std::vector<double> face_values[2];
@@ -366,8 +367,8 @@ namespace Step74
 
   template <int dim>
   void SIPGLaplace<dim>::get_function_jump(const FEInterfaceValues<dim> &fe_iv,
-                                            const Vector<double> &solution,
-                                            std::vector<double> &jump)
+                                           const Vector<double> &solution,
+                                           std::vector<double> & jump)
   {
     const unsigned      n_q = fe_iv.n_quadrature_points;
     std::vector<double> face_values[2];
@@ -385,7 +386,7 @@ namespace Step74
   template <int dim>
   void SIPGLaplace<dim>::get_function_gradients(
     const FEInterfaceValues<dim> &fe_iv,
-    const Vector<double>          &solution,
+    const Vector<double> &        solution,
     std::vector<Tensor<1, dim>>   face_gradients[2])
   {
     const unsigned n_q = fe_iv.n_quadrature_points;
@@ -400,7 +401,7 @@ namespace Step74
   template <int dim>
   void SIPGLaplace<dim>::get_function_gradient_jump(
     const FEInterfaceValues<dim> &fe_iv,
-    const Vector<double>          &solution,
+    const Vector<double> &        solution,
     std::vector<Tensor<1, dim>> & gradient_jump)
   {
     const unsigned              n_q = fe_iv.n_quadrature_points;
@@ -420,7 +421,7 @@ namespace Step74
   template <int dim>
   void SIPGLaplace<dim>::get_function_gradient_average(
     const FEInterfaceValues<dim> &fe_iv,
-    const Vector<double>          &solution,
+    const Vector<double> &        solution,
     std::vector<Tensor<1, dim>> & gradient_average)
   {
     const unsigned              n_q = fe_iv.n_quadrature_points;
@@ -575,8 +576,8 @@ namespace Step74
 
       const double extent1 =
         cell->extent_in_direction(GeometryInfo<dim>::unit_normal_direction[f]);
-      const double extent2 = 
-        ncell->extent_in_direction(GeometryInfo<dim>::unit_normal_direction[nf]);
+      const double extent2 = ncell->extent_in_direction(
+        GeometryInfo<dim>::unit_normal_direction[nf]);
       const double penalty = compute_penalty(extent1, extent2);
 
       for (unsigned int point = 0; point < n_q_points; ++point)
@@ -645,8 +646,9 @@ namespace Step74
   template <int dim>
   void SIPGLaplace<dim>::output_results(const unsigned int cycle) const
   {
-    std::string filename = "sol_Q" + Utilities::int_to_string(fe.get_degree(),1) + "-"
-                         + Utilities::int_to_string(cycle, 2) + ".vtu";
+    std::string filename = "sol_Q" +
+                           Utilities::int_to_string(fe.get_degree(), 1) + "-" +
+                           Utilities::int_to_string(cycle, 2) + ".vtu";
     deallog << "Writing solution to <" << filename << ">" << std::endl;
     std::ofstream output(filename.c_str());
 
@@ -675,7 +677,6 @@ namespace Step74
       L2_error = VectorTools::compute_global_error(triangulation,
                                                    difference_per_cell,
                                                    VectorTools::L2_norm);
-
     }
 
     {
@@ -698,10 +699,10 @@ namespace Step74
     const double energy_error = compute_energy_norm();
     convergence_table.add_value("Energy", energy_error);
 
-    std::cout << "   Error in the L2 norm       :     " << L2_error<< std::endl
-              << "   Error in the H1 seminorm   :     " << H1_error<< std::endl
-              << "   Error in the enery norm    :     " << energy_error<< std::endl;
-
+    std::cout << "   Error in the L2 norm       :     " << L2_error << std::endl
+              << "   Error in the H1 seminorm   :     " << H1_error << std::endl
+              << "   Error in the enery norm    :     " << energy_error
+              << std::endl;
   }
 
   template <int dim>
@@ -810,7 +811,7 @@ namespace Step74
       const double extent1 =
         cell->extent_in_direction(GeometryInfo<dim>::unit_normal_direction[f]);
       const double extent2 = ncell->extent_in_direction(
-                               GeometryInfo<dim>::unit_normal_direction[nf]);
+        GeometryInfo<dim>::unit_normal_direction[nf]);
       const double penalty = compute_penalty(extent1, extent2);
 
       double flux_jump_square = 0;
@@ -832,7 +833,8 @@ namespace Step74
 
     auto copier = [&](const CopyData &copy_data) {
       if (copy_data.cell_index != numbers::invalid_unsigned_int)
-        estimated_error_square_per_cell[copy_data.cell_index] += copy_data.value;
+        estimated_error_square_per_cell[copy_data.cell_index] +=
+          copy_data.value;
       for (auto &cdf : copy_data.face_data)
         for (unsigned int j = 0; j < 2; ++j)
           estimated_error_square_per_cell[cdf.cell_indices[j]] += cdf.values[j];
@@ -893,7 +895,8 @@ namespace Step74
       double norm_square = 0;
       for (unsigned int point = 0; point < n_q_points; ++point)
         {
-          norm_square += (grad_u[point] - grad_exact[point]).norm_square() * JxW[point];
+          norm_square +=
+            (grad_u[point] - grad_exact[point]).norm_square() * JxW[point];
         }
       copy_data.value = norm_square;
     };
@@ -956,7 +959,7 @@ namespace Step74
       const double extent1 =
         cell->extent_in_direction(GeometryInfo<dim>::unit_normal_direction[f]);
       const double extent2 = ncell->extent_in_direction(
-                               GeometryInfo<dim>::unit_normal_direction[nf]);
+        GeometryInfo<dim>::unit_normal_direction[nf]);
       const double penalty = compute_penalty(extent1, extent2);
 
       double u_jump_square = 0;
@@ -1001,7 +1004,8 @@ namespace Step74
                             MeshWorker::assemble_boundary_faces,
                           boundary_worker,
                           face_worker);
-    const double energy_error = std::sqrt(energy_norm_square_per_cell.l1_norm());
+    const double energy_error =
+      std::sqrt(energy_norm_square_per_cell.l1_norm());
     return energy_error;
   }
 
@@ -1012,10 +1016,8 @@ namespace Step74
   {
     const double refinement_fraction = 0.1;
 
-    GridRefinement::refine_and_coarsen_fixed_number(triangulation,
-                                                    estimated_error_square_per_cell,
-                                                    refinement_fraction,
-                                                    0.);
+    GridRefinement::refine_and_coarsen_fixed_number(
+      triangulation, estimated_error_square_per_cell, refinement_fraction, 0.);
 
     triangulation.execute_coarsening_and_refinement();
   }
@@ -1079,9 +1081,10 @@ namespace Step74
           {
             compute_error_estimate();
             convergence_table.add_value(
-            "Estimator", std::sqrt(estimated_error_square_per_cell.l1_norm()));
+              "Estimator",
+              std::sqrt(estimated_error_square_per_cell.l1_norm()));
           }
-        std::cout<<std::endl;
+        std::cout << std::endl;
       }
     {
       convergence_table.set_precision("L2", 3);
@@ -1122,7 +1125,7 @@ int main()
       using namespace dealii;
       using namespace Step74;
       deallog.depth_console(2);
-      Test_Case test_case = Test_Case::l_singularity;
+      Test_Case      test_case = Test_Case::l_singularity;
       SIPGLaplace<2> problem(test_case);
       problem.run();
     }
