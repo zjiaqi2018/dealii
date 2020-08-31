@@ -66,7 +66,7 @@ namespace Step74
 {
   using namespace dealii;
 
-  enum Test_Case
+  enum class Test_Case
   {
     convergence_rate,
     l_singularity
@@ -99,7 +99,7 @@ namespace Step74
   {
     switch (this->test_case)
       {
-        case convergence_rate:
+        case Test_Case::convergence_rate:
           {
             using numbers::PI;
             for (unsigned int i = 0; i < values.size(); ++i)
@@ -107,7 +107,7 @@ namespace Step74
                           std::sin(2 * PI * points[i][1]);
             break;
           }
-        case l_singularity:
+        case Test_Case::l_singularity:
           {
             for (unsigned int i = 0; i < values.size(); ++i)
               values[i] = ref.value(points[i]);
@@ -127,7 +127,7 @@ namespace Step74
   {
     switch (this->test_case)
       {
-        case convergence_rate:
+        case Test_Case::convergence_rate:
           {
             Tensor<1, dim> return_value;
             using numbers::PI;
@@ -138,7 +138,7 @@ namespace Step74
             return return_value;
             break;
           }
-        case l_singularity:
+        case Test_Case::l_singularity:
           {
             return ref.gradient(point);
             break;
@@ -164,7 +164,7 @@ namespace Step74
     {
       switch (test_case)
         {
-          case convergence_rate:
+          case Test_Case::convergence_rate:
             {
               using numbers::PI;
               for (unsigned int i = 0; i < values.size(); ++i)
@@ -172,10 +172,10 @@ namespace Step74
                             std::sin(2. * PI * points[i][1]);
               break;
             }
-          case l_singularity:
+          case Test_Case::l_singularity:
             {
               for (unsigned int i = 0; i < values.size(); ++i)
-                // assuming that viscosity (nu) =1
+                // assuming that diffusion_coefficient (nu) =1
                 values[i] = -ref.laplacian(points[i]);
               break;
             }
@@ -266,7 +266,8 @@ namespace Step74
     void   solve();
     void   refine_grid();
     void   output_results(const unsigned int cycle) const;
-    double compute_penalty(const double h1, const double h2);
+    double compute_penalty(const double cell_extend_left,
+                           const double cell_extend_right);
     void   compute_errors();
     void   compute_error_estimate();
     double compute_energy_norm();
@@ -315,12 +316,10 @@ namespace Step74
     Vector<double>   estimated_error_square_per_cell;
     Vector<double>   energy_norm_square_per_cell;
     ConvergenceTable convergence_table;
-    const double     viscosity = 1.0;
+    const double     diffusion_coefficient = 1.0;
   };
 
 
-  // We start with the constructor. The 1 in the constructor call of
-  // <code>fe</code> is the polynomial degree.
   template <int dim>
   SIPGLaplace<dim>::SIPGLaplace(const Test_Case &test_case)
     : test_case(test_case)
@@ -453,10 +452,12 @@ namespace Step74
   }
 
   template <int dim>
-  double SIPGLaplace<dim>::compute_penalty(const double h1, const double h2)
+  double SIPGLaplace<dim>::compute_penalty(const double cell_extend_left,
+                                           const double cell_extend_right)
   {
     const double degree = std::max(1.0, static_cast<double>(fe.get_degree()));
-    return degree * (degree + 1.0) * 0.5 * (1.0 / h1 + 1.0 / h2);
+    return degree * (degree + 1.0) * 0.5 *
+           (1.0 / cell_extend_left + 1.0 / cell_extend_right);
   }
 
 
@@ -488,7 +489,7 @@ namespace Step74
             for (unsigned int j = 0; j < fe_v.dofs_per_cell; ++j)
               copy_data.cell_matrix(i, j) +=
                 // nu \nabla u \nabla v
-                viscosity * fe_v.shape_grad(i, point) *
+                diffusion_coefficient * fe_v.shape_grad(i, point) *
                 fe_v.shape_grad(j, point) * JxW[point];
 
             copy_data.cell_rhs(i) +=
@@ -525,28 +526,30 @@ namespace Step74
               copy_data.cell_matrix(i, j) +=
                 (
                   // - nu (\nabla u . n) v
-                  -viscosity * (fe_fv.shape_grad(j, point) * normals[point]) *
+                  -diffusion_coefficient *
+                    (fe_fv.shape_grad(j, point) * normals[point]) *
                     fe_fv.shape_value(i, point)
 
                   // - nu u (\nabla v . n)  // NIPG: use +
-                  - viscosity * fe_fv.shape_value(j, point) *
+                  - diffusion_coefficient * fe_fv.shape_value(j, point) *
                       (fe_fv.shape_grad(i, point) * normals[point])
 
                   // + nu * penalty u v
-                  + viscosity * penalty * fe_fv.shape_value(j, point) *
-                      fe_fv.shape_value(i, point)) *
+                  +
+                  diffusion_coefficient * penalty *
+                    fe_fv.shape_value(j, point) * fe_fv.shape_value(i, point)) *
                 JxW[point];
 
           for (unsigned int i = 0; i < dofs_per_cell; ++i)
             copy_data.cell_rhs(i) +=
               (
                 // -nu g (\nabla v . n) // NIPG: use +
-                -viscosity * g[point] *
+                -diffusion_coefficient * g[point] *
                   (fe_fv.shape_grad(i, point) * normals[point])
 
                 // +nu penalty g v
-                +
-                viscosity * penalty * g[point] * fe_fv.shape_value(i, point)) *
+                + diffusion_coefficient * penalty * g[point] *
+                    fe_fv.shape_value(i, point)) *
               JxW[point];
         }
     };
@@ -587,16 +590,16 @@ namespace Step74
               copy_data_face.cell_matrix(i, j) +=
                 (
                   // - nu {\nabla u}.n [v] (consistency)
-                  -viscosity *
+                  -diffusion_coefficient *
                     (fe_iv.average_gradient(j, point) * normals[point]) *
                     fe_iv.jump(i, point)
 
                   // - nu [u] {\nabla v}.n  (symmetry) // NIPG: use +
-                  - viscosity * fe_iv.jump(j, point) *
+                  - diffusion_coefficient * fe_iv.jump(j, point) *
                       (fe_iv.average_gradient(i, point) * normals[point])
 
                   // nu sigma [u] [v] (penalty)
-                  + viscosity * penalty * fe_iv.jump(j, point) *
+                  + diffusion_coefficient * penalty * fe_iv.jump(j, point) *
                       fe_iv.jump(i, point)
 
                     ) *
@@ -736,7 +739,7 @@ namespace Step74
       for (unsigned int point = 0; point < n_q_points; ++point)
         {
           const double residual =
-            rhs[point] + viscosity * trace(hessians[point]);
+            rhs[point] + diffusion_coefficient * trace(hessians[point]);
           residual_norm_square += residual * residual * JxW[point];
         }
       copy_data.value = hk * hk * residual_norm_square;
@@ -824,7 +827,8 @@ namespace Step74
           const double flux_jump =
             (grad_u[0][point] - grad_u[1][point]) * normals[point];
           // const double flux_jump = grad_jump[point]*normals[point];
-          flux_jump_square += viscosity * flux_jump * flux_jump * JxW[point];
+          flux_jump_square +=
+            diffusion_coefficient * flux_jump * flux_jump * JxW[point];
         }
       copy_data_face.values[0] =
         0.5 * h * (flux_jump_square + penalty * u_jump_square);
@@ -1026,14 +1030,14 @@ namespace Step74
   template <int dim>
   void SIPGLaplace<dim>::run()
   {
-    unsigned int max_cycle = test_case == convergence_rate ? 6 : 10;
+    unsigned int max_cycle = test_case == Test_Case::convergence_rate ? 6 : 10;
     for (unsigned int cycle = 0; cycle < max_cycle; ++cycle)
       {
         deallog << "Cycle " << cycle << std::endl;
 
         switch (test_case)
           {
-            case convergence_rate:
+            case Test_Case::convergence_rate:
               {
                 if (cycle == 0)
                   {
@@ -1047,7 +1051,7 @@ namespace Step74
                   }
                 break;
               }
-            case l_singularity:
+            case Test_Case::l_singularity:
               {
                 if (cycle == 0)
                   {
@@ -1077,7 +1081,7 @@ namespace Step74
         }
         compute_errors();
 
-        if (test_case == l_singularity)
+        if (test_case == Test_Case::l_singularity)
           {
             compute_error_estimate();
             convergence_table.add_value(
@@ -1095,12 +1099,12 @@ namespace Step74
       convergence_table.set_scientific("H1", true);
       convergence_table.set_scientific("Energy", true);
 
-      if (test_case == l_singularity)
+      if (test_case == Test_Case::l_singularity)
         {
           convergence_table.set_precision("Estimator", 3);
           convergence_table.set_scientific("Estimator", true);
         }
-      if (test_case == convergence_rate)
+      if (test_case == Test_Case::convergence_rate)
         {
           convergence_table.evaluate_convergence_rates(
             "L2", ConvergenceTable::reduction_rate_log2);
