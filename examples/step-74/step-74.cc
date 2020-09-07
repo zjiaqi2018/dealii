@@ -72,14 +72,53 @@ namespace Step74
     l_singularity
   };
 
-
   template <int dim>
-  class Solution : public Function<dim>
+  class Solution_Smooth : public Function<dim>
   {
   public:
-    Solution(Test_Case test_case)
+    Solution_Smooth()
       : Function<dim>()
-      , test_case(test_case)
+    {}
+    virtual void           value_list(const std::vector<Point<dim>> &points,
+                                      std::vector<double> &          values,
+                                      const unsigned int             component = 0) const;
+    virtual Tensor<1, dim> gradient(const Point<dim> & point,
+                                    const unsigned int component = 0) const;
+  };
+
+  template <int dim>
+  void Solution_Smooth<dim>::value_list(const std::vector<Point<dim>> &points,
+                                        std::vector<double> &          values,
+                                        const unsigned int component) const
+  {
+    using numbers::PI;
+    for (unsigned int i = 0; i < values.size(); ++i)
+      values[i] =
+        std::sin(2. * PI * points[i][0]) * std::sin(2. * PI * points[i][1]);
+  }
+
+  template <int dim>
+  Tensor<1, dim>
+  Solution_Smooth<dim>::gradient(const Point<dim> & point,
+                                 const unsigned int component) const
+  {
+    Tensor<1, dim> return_value;
+    using numbers::PI;
+    return_value[0] =
+      2. * PI * std::cos(2. * PI * point[0]) * std::sin(2. * PI * point[1]);
+    return_value[1] =
+      2. * PI * std::sin(2. * PI * point[0]) * std::cos(2. * PI * point[1]);
+    return return_value;
+  }
+
+
+
+  template <int dim>
+  class Solution_Singular : public Function<dim>
+  {
+  public:
+    Solution_Singular()
+      : Function<dim>()
     {}
     virtual void           value_list(const std::vector<Point<dim>> &points,
                                       std::vector<double> &          values,
@@ -89,108 +128,68 @@ namespace Step74
 
   private:
     Functions::LSingularityFunction ref;
-    Test_Case                       test_case;
   };
 
   template <int dim>
-  void Solution<dim>::value_list(const std::vector<Point<dim>> &points,
-                                 std::vector<double> &          values,
-                                 const unsigned int             component) const
+  void Solution_Singular<dim>::value_list(const std::vector<Point<dim>> &points,
+                                          std::vector<double> &          values,
+                                          const unsigned int component) const
   {
-    switch (this->test_case)
-      {
-        case Test_Case::convergence_rate:
-          {
-            using numbers::PI;
-            for (unsigned int i = 0; i < values.size(); ++i)
-              values[i] = std::sin(2 * PI * points[i][0]) *
-                          std::sin(2 * PI * points[i][1]);
-            break;
-          }
-        case Test_Case::l_singularity:
-          {
-            for (unsigned int i = 0; i < values.size(); ++i)
-              values[i] = ref.value(points[i]);
-            break;
-          }
-        default:
-          {
-            Assert(false, ExcNotImplemented());
-          }
-      }
-  }
-
-
-  template <int dim>
-  Tensor<1, dim> Solution<dim>::gradient(const Point<dim> & point,
-                                         const unsigned int component) const
-  {
-    switch (this->test_case)
-      {
-        case Test_Case::convergence_rate:
-          {
-            Tensor<1, dim> return_value;
-            using numbers::PI;
-            return_value[0] = 2.0 * PI * std::cos(2.0 * PI * point[0]) *
-                              std::sin(2.0 * PI * point[1]);
-            return_value[1] = 2.0 * PI * std::sin(2.0 * PI * point[0]) *
-                              std::cos(2.0 * PI * point[1]);
-            return return_value;
-            break;
-          }
-        case Test_Case::l_singularity:
-          {
-            return ref.gradient(point);
-            break;
-          }
-        default:
-          {
-            Assert(false, ExcNotImplemented());
-          }
-      }
+    for (unsigned int i = 0; i < values.size(); ++i)
+      values[i] = ref.value(points[i]);
   }
 
   template <int dim>
-  class RHS : public Function<dim>
+  Tensor<1, dim>
+  Solution_Singular<dim>::gradient(const Point<dim> & point,
+                                   const unsigned int component) const
+  {
+    return ref.gradient(point);
+  }
+
+
+
+  template <int dim>
+  class RHS_Smooth : public Function<dim>
   {
   public:
-    RHS(Test_Case test_case)
+    RHS_Smooth()
       : Function<dim>()
-      , test_case(test_case)
     {}
     virtual void value_list(const std::vector<Point<dim>> &points,
                             std::vector<double> &          values,
                             const unsigned int             component = 0) const
     {
-      switch (test_case)
-        {
-          case Test_Case::convergence_rate:
-            {
-              using numbers::PI;
-              for (unsigned int i = 0; i < values.size(); ++i)
-                values[i] = 8. * PI * PI * std::sin(2. * PI * points[i][0]) *
-                            std::sin(2. * PI * points[i][1]);
-              break;
-            }
-          case Test_Case::l_singularity:
-            {
-              for (unsigned int i = 0; i < values.size(); ++i)
-                // assuming that diffusion_coefficient (nu) =1
-                values[i] = -ref.laplacian(points[i]);
-              break;
-            }
-          default:
-            {
-              Assert(false, ExcNotImplemented());
-            }
-        }
+      using numbers::PI;
+      for (unsigned int i = 0; i < values.size(); ++i)
+        values[i] = 8. * PI * PI * std::sin(2. * PI * points[i][0]) *
+                    std::sin(2. * PI * points[i][1]);
+    }
+  };
+
+
+
+  template <int dim>
+  class RHS_Singular : public Function<dim>
+  {
+  public:
+    RHS_Singular()
+      : Function<dim>()
+    {}
+    virtual void value_list(const std::vector<Point<dim>> &points,
+                            std::vector<double> &          values,
+                            const unsigned int             component = 0) const
+    {
+      for (unsigned int i = 0; i < values.size(); ++i)
+        // assuming that diffusion_coefficient (nu) =1
+        values[i] = -ref.laplacian(points[i]);
     }
 
 
   private:
     Functions::LSingularityFunction ref;
-    Test_Case                       test_case;
   };
+
 
   // @sect3{The SIPGLaplace class}
   //
@@ -316,7 +315,10 @@ namespace Step74
     Vector<double>   estimated_error_square_per_cell;
     Vector<double>   energy_norm_square_per_cell;
     ConvergenceTable convergence_table;
-    const double     diffusion_coefficient = 1.0;
+    const double     diffusion_coefficient = 1.;
+
+    std::unique_ptr<Function<dim>> exact_solution_ptr;
+    std::unique_ptr<Function<dim>> rhs_ptr;
   };
 
 
@@ -326,7 +328,19 @@ namespace Step74
     , mapping()
     , fe(3)
     , dof_handler(triangulation)
-  {}
+  {
+    if (test_case == Test_Case::convergence_rate)
+      {
+        exact_solution_ptr = std::make_unique<Solution_Smooth<dim>>();
+        rhs_ptr            = std::make_unique<RHS_Smooth<dim>>();
+      }
+
+    else if (test_case == Test_Case::l_singularity)
+      {
+        exact_solution_ptr = std::make_unique<Solution_Singular<dim>>();
+        rhs_ptr            = std::make_unique<RHS_Singular<dim>>();
+      }
+  }
   // This function can be put in the FEInterfaceValues, and can be used just
   // like get_function_values std::vector<double>          face_values[2]
   // fe_iv.get_interface_values(solution, face_values)
@@ -455,9 +469,9 @@ namespace Step74
   double SIPGLaplace<dim>::compute_penalty(const double cell_extend_left,
                                            const double cell_extend_right)
   {
-    const double degree = std::max(1.0, static_cast<double>(fe.get_degree()));
-    return degree * (degree + 1.0) * 0.5 *
-           (1.0 / cell_extend_left + 1.0 / cell_extend_right);
+    const double degree = std::max(1., static_cast<double>(fe.get_degree()));
+    return degree * (degree + 1.) * 0.5 *
+           (1. / cell_extend_left + 1. / cell_extend_right);
   }
 
 
@@ -466,8 +480,6 @@ namespace Step74
   void SIPGLaplace<dim>::assemble_system()
   {
     typedef decltype(dof_handler.begin_active()) Iterator;
-    const RHS<dim>                               rhs_function(test_case);
-    const Solution<dim>                          boundary_function(test_case);
 
     auto cell_worker = [&](const Iterator &cell,
                            ScratchData &   scratch_data,
@@ -481,7 +493,7 @@ namespace Step74
       const std::vector<double> &JxW = scratch_data.get_JxW_values();
 
       std::vector<double> rhs(n_q_points);
-      rhs_function.value_list(q_points, rhs);
+      rhs_ptr->value_list(q_points, rhs);
 
       for (unsigned int point = 0; point < n_q_points; ++point)
         for (unsigned int i = 0; i < fe_v.dofs_per_cell; ++i)
@@ -512,7 +524,7 @@ namespace Step74
         scratch_data.get_normal_vectors();
 
       std::vector<double> g(n_q_points);
-      boundary_function.value_list(q_points, g);
+      exact_solution_ptr->value_list(q_points, g);
 
 
       const double extent1 = cell->extent_in_direction(
@@ -672,7 +684,7 @@ namespace Step74
       VectorTools::integrate_difference(mapping,
                                         dof_handler,
                                         solution,
-                                        Solution<dim>(test_case),
+                                        *(exact_solution_ptr.get()),
                                         difference_per_cell,
                                         QGauss<dim>(fe.degree + 2),
                                         VectorTools::L2_norm);
@@ -687,7 +699,7 @@ namespace Step74
       VectorTools::integrate_difference(mapping,
                                         dof_handler,
                                         solution,
-                                        Solution<dim>(test_case),
+                                        *(exact_solution_ptr.get()),
                                         difference_per_cell,
                                         QGauss<dim>(fe.degree + 2),
                                         VectorTools::H1_seminorm);
@@ -712,8 +724,6 @@ namespace Step74
   void SIPGLaplace<dim>::compute_error_estimate()
   {
     typedef decltype(dof_handler.begin_active()) Iterator;
-    const RHS<dim>                               rhs_function(test_case);
-    const Solution<dim>                          boundary_function(test_case);
     estimated_error_square_per_cell.reinit(triangulation.n_active_cells());
 
     auto cell_worker = [&](const Iterator &cell,
@@ -731,7 +741,7 @@ namespace Step74
       fe_v.get_function_hessians(solution, hessians);
 
       std::vector<double> rhs(n_q_points);
-      rhs_function.value_list(q_points, rhs);
+      rhs_ptr->value_list(q_points, rhs);
 
       const double hk                   = cell->diameter();
       double       residual_norm_square = 0;
@@ -757,7 +767,7 @@ namespace Step74
       const std::vector<double> &JxW = fe_fv.get_JxW_values();
 
       std::vector<double> g(n_q_points);
-      boundary_function.value_list(q_points, g);
+      exact_solution_ptr->value_list(q_points, g);
 
       std::vector<double> sol_u(n_q_points);
       fe_fv.get_function_values(solution, sol_u);
@@ -766,7 +776,7 @@ namespace Step74
         GeometryInfo<dim>::unit_normal_direction[face_no]);
       const double penalty = compute_penalty(extent1, extent1);
 
-      double difference_norm_square = 0.0;
+      double difference_norm_square = 0.;
       for (unsigned int point = 0; point < q_points.size(); ++point)
         {
           const double diff = (g[point] - sol_u[point]);
@@ -798,16 +808,11 @@ namespace Step74
       const auto &       q_points   = fe_iv.get_quadrature_points();
       const unsigned int n_q_points = q_points.size();
 
-      std::vector<Tensor<1, dim>> grad_u[2];
-      std::vector<double>         sol_u[2];
-      get_function_values(fe_iv, solution, sol_u);
-      get_function_gradients(fe_iv, solution, grad_u);
+      std::vector<double> jump(n_q_points);
+      get_function_jump(fe_iv, solution, jump);
 
-      // std::vector<double> jump(n_q_points);
-      // get_interface_jump(fe_iv, solution, jump);
-
-      // std::vector<Tensor<1,dim>> grad_jump(n_q_points);
-      // get_interface_gradient_jump(fe_iv, solution, grad_jump);
+      std::vector<Tensor<1,dim>> grad_jump(n_q_points);
+      get_function_gradient_jump(fe_iv, solution, grad_jump);
 
       const double h = cell->face(f)->diameter();
 
@@ -821,12 +826,8 @@ namespace Step74
       double u_jump_square    = 0;
       for (unsigned int point = 0; point < n_q_points; ++point)
         {
-          const double u_jump = sol_u[0][point] - sol_u[1][point];
-          u_jump_square += u_jump * u_jump * JxW[point];
-          // u_jump_square += jump[point]*jump[point]*JxW[point];
-          const double flux_jump =
-            (grad_u[0][point] - grad_u[1][point]) * normals[point];
-          // const double flux_jump = grad_jump[point]*normals[point];
+          u_jump_square += jump[point]*jump[point]*JxW[point];
+          const double flux_jump = grad_jump[point]*normals[point];
           flux_jump_square +=
             diffusion_coefficient * flux_jump * flux_jump * JxW[point];
         }
@@ -876,7 +877,6 @@ namespace Step74
   double SIPGLaplace<dim>::compute_energy_norm()
   {
     typedef decltype(dof_handler.begin_active()) Iterator;
-    const Solution<dim>                          boundary_function(test_case);
     energy_norm_square_per_cell.reinit(triangulation.n_active_cells());
 
     auto cell_worker = [&](const Iterator &cell,
@@ -894,7 +894,7 @@ namespace Step74
       fe_v.get_function_gradients(solution, grad_u);
 
       std::vector<Tensor<1, dim>> grad_exact(n_q_points);
-      boundary_function.gradient_list(q_points, grad_exact);
+      exact_solution_ptr->gradient_list(q_points, grad_exact);
 
       double norm_square = 0;
       for (unsigned int point = 0; point < n_q_points; ++point)
@@ -917,7 +917,7 @@ namespace Step74
       const std::vector<double> &JxW = fe_fv.get_JxW_values();
 
       std::vector<double> g(n_q_points);
-      boundary_function.value_list(q_points, g);
+      exact_solution_ptr->value_list(q_points, g);
 
       std::vector<double> sol_u(n_q_points);
       fe_fv.get_function_values(solution, sol_u);
@@ -926,7 +926,7 @@ namespace Step74
         GeometryInfo<dim>::unit_normal_direction[face_no]);
       const double penalty = compute_penalty(extent1, extent1);
 
-      double difference_norm_square = 0.0;
+      double difference_norm_square = 0.;
       for (unsigned int point = 0; point < q_points.size(); ++point)
         {
           const double diff = (g[point] - sol_u[point]);
