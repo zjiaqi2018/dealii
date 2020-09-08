@@ -147,8 +147,6 @@ namespace Step74
     return ref.gradient(point);
   }
 
-
-
   template <int dim>
   class RHS_Smooth : public Function<dim>
   {
@@ -811,7 +809,7 @@ namespace Step74
       std::vector<double> jump(n_q_points);
       get_function_jump(fe_iv, solution, jump);
 
-      std::vector<Tensor<1,dim>> grad_jump(n_q_points);
+      std::vector<Tensor<1, dim>> grad_jump(n_q_points);
       get_function_gradient_jump(fe_iv, solution, grad_jump);
 
       const double h = cell->face(f)->diameter();
@@ -826,8 +824,8 @@ namespace Step74
       double u_jump_square    = 0;
       for (unsigned int point = 0; point < n_q_points; ++point)
         {
-          u_jump_square += jump[point]*jump[point]*JxW[point];
-          const double flux_jump = grad_jump[point]*normals[point];
+          u_jump_square += jump[point] * jump[point] * JxW[point];
+          const double flux_jump = grad_jump[point] * normals[point];
           flux_jump_square +=
             diffusion_coefficient * flux_jump * flux_jump * JxW[point];
         }
