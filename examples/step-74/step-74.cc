@@ -72,17 +72,18 @@ namespace Step74
     SmoothSolution()
       : Function<dim>()
     {}
-    virtual void           value_list(const std::vector<Point<dim>> &points,
-                                      std::vector<double> &          values,
-                                      const unsigned int             component = 0) const;
-    virtual Tensor<1, dim> gradient(const Point<dim> & point,
-                                    const unsigned int component = 0) const;
+    virtual void value_list(const std::vector<Point<dim>> &points,
+                            std::vector<double> &          values,
+                            const unsigned int component = 0) const override;
+    virtual Tensor<1, dim>
+    gradient(const Point<dim> & point,
+             const unsigned int component = 0) const override;
   };
 
   template <int dim>
   void SmoothSolution<dim>::value_list(const std::vector<Point<dim>> &points,
                                        std::vector<double> &          values,
-                                       const unsigned int component) const
+                                       const unsigned int /*component*/) const
   {
     using numbers::PI;
     for (unsigned int i = 0; i < values.size(); ++i)
@@ -92,8 +93,8 @@ namespace Step74
 
   template <int dim>
   Tensor<1, dim>
-  SmoothSolution<dim>::gradient(const Point<dim> & point,
-                                const unsigned int component) const
+  SmoothSolution<dim>::gradient(const Point<dim> &point,
+                                const unsigned int /*component*/) const
   {
     Tensor<1, dim> return_value;
     using numbers::PI;
@@ -114,7 +115,7 @@ namespace Step74
     {}
     virtual void value_list(const std::vector<Point<dim>> &points,
                             std::vector<double> &          values,
-                            const unsigned int             component = 0) const
+                            const unsigned int /*component*/) const override
     {
       using numbers::PI;
       for (unsigned int i = 0; i < values.size(); ++i)
@@ -134,7 +135,7 @@ namespace Step74
     {}
     virtual void value_list(const std::vector<Point<dim>> &points,
                             std::vector<double> &          values,
-                            const unsigned int             component = 0) const
+                            const unsigned int /*component*/) const override
     {
       for (unsigned int i = 0; i < values.size(); ++i)
         // We assume that the diffusion coefficient $nu$ = 1.
@@ -286,10 +287,10 @@ namespace Step74
   // call of fe is the polynomial degree.
   template <int dim>
   SIPGLaplace<dim>::SIPGLaplace(const Test_Case &test_case)
-    : test_case(test_case)
-    , mapping()
+    : mapping()
     , fe(3)
     , dof_handler(triangulation)
+    , test_case(test_case)
   {
     if (test_case == Test_Case::convergence_rate)
       {
