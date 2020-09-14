@@ -1,5 +1,15 @@
 <br>
 
+<i>
+This program was contributed by Timo Heister and Jiaqi Zhang.
+<br>
+This material is based upon work partly supported by the National
+Science Foundation Award DMS-2028346, OAC-2015848, EAR-1925575, by the Computational
+Infrastructure in Geodynamics initiative (CIG), through the NSF under Award
+EAR-0949446 and EAR-1550901 and The University of California -- Davis.
+</i>
+
+
 <a name="Intro"></a>
 <h1><em>Symmetric interior penalty Galerkin</em> (SIPG) method for Poisson's equation</h1>
 
@@ -12,7 +22,7 @@ This tutorial includes the following topics.
   <li> The SIPG method for Poisson's equation, which has been used in step-39 and step-59.
   <li> Assembling of face terms using FEInterfaceValues and the system matrix using MeshWorker::mesh_loop(), which is similar to step-12.
   <li> Adaptive mesh refinement using an error estimator.
-  <li> Two test cases: convergence test for a smooth function and adaptive mesh refinement test for the Functions::LSingularityFunction using an error estimator.
+  <li> Two test cases: convergence test for a smooth function and adaptive mesh refinement test for a singular solution.
 </ol>
 
 <h3>The equation</h3>
@@ -25,34 +35,36 @@ subject to the boundary condition
 u = g_D \qquad \mbox{on } \partial \Omega.
 @f]
 For simplicity, we assume that the diffusion coefficient $\nu$ is constant here.
-Note that if $\nu$ is discontinuous, we need to take it into account when computing jump terms
+Note that if $\nu$ is discontinuous, we need to take this into account when computing jump terms
 on cell faces.
 
 We denote the mesh by $\Gamma_h$, and $K\in\Gamma_h$ is a mesh cell.
-The sets of interior and boudnary faces are denoted by $F^i_h$ and $F^b_h$
-respectively. Let $K^0$ and $K^1$ be the two cells sharing a face,
+The sets of interior and boundary faces are denoted by $F^i_h$ and $F^b_h$
+respectively. Let $K^0$ and $K^1$ be the two cells sharing a face $f\in F_h^i$,
 and $\mathbf n$ be the outer normal vector of $K^0$. Then the jump and average
-are given by
+operators are given by
 @f[
-[v] = v^0 - v^1
+\jump{v} = v^0 - v^1
 @f]
 and
 @f[
 \average{v} = \frac{v^0 + v^1}{2}
 @f]
-respectively.
+respectively. Note that when $f\in \partial Omega$, we define $\jump{v} = v$ and
+$\average{v}=v$.
 The discretization using the SIPG is given by the following weak formula
+(more details can be found in @cite di2011mathematical and the references therein)
 @f{multline*}
   \sum_{K\in \Gamma_h} (\nabla v_h, \nu \nabla u_h)_K
   \\
   - \sum_{F \in F_h^i} \biggl\{
-    \bigl< [ v_h ], \nu\average{ \nabla u_h} \cdot  \mathbf n \bigr>_F
-   +\bigl<\average{ \nabla v_h }\cdot \mathbf n,\nu[u_h]\bigr>_F
-   -\bigl<[v_h],\nu \sigma [u_h] \bigr>_F
+    \bigl< \jump{v_h}, \nu\average{ \nabla u_h} \cdot  \mathbf n \bigr>_F
+   +\bigl<\average{ \nabla v_h }\cdot \mathbf n,\nu\jump{u_h}\bigr>_F
+   -\bigl<\jump{v_h},\nu \sigma \jump{u_h} \bigr>_F
   \biggr\}
   \\
   - \sum_{F \in F_h^b} \biggl\{
-    \bigl<v_h, \nabla u_h\cdot \mathbf n \bigr>_F
+    \bigl<v_h, \nv \nabla u_h\cdot \mathbf n \bigr>_F
   + \bigl< \nabla v_h \cdot \mathbb n , \nu u_h\bigr>_F
   - \bigl< v_h,\nu \sigma u_h\bigr>_F
   \biggr\}
@@ -65,19 +77,21 @@ The discretization using the SIPG is given by the following weak formula
 
 <h3>The penalty parameter</h3>
 The parameter is defined as $\sigma = \gamma/h_f$, where $h_f$ a local length scale associated
-with the cell face , here we choose the length of the cell in the direction normal to the face, and $\gamma$ is the penalization constant. In Mark Ainsworth (2007), the lower bound of $\gamma$ is
+with the cell face, here we choose the length of the cell in the direction normal to the face,
+and $\gamma$ is the penalization constant. The lower bound of $\gamma$ @cite ainsworth2007posteriori
+is given by
 @f[
 \gamma > 4\max_{K\in \Gamma_h}\rho\left( S_K \right).
 @f]
 Here $[S_K]_{i,j} = (\nu \nabla \phi_i, \nabla\phi_j)_K$.
 
 To ensure the discrete coercivity, the penalization constant has to be large enough.
-There is no concensus on how to determine $\gamma$ in implementation. One can just pick large constants,
+There is no concensus in the literature on how to determine $\gamma$ in practice. One can just pick a large constant,
 while other options could be the multiples of $(p+1)^2$ or $p(p+1)$. In this code,
 we follow step-39 and use $\gamma = p(p+1)$.
 
 <h3>Posteriori error estimator</h3>
-In this example, we use the error estimator by Karakashian and Pascal (2003)
+In this example, we use the error estimator by Karakashian and Pascal @cite karakashian2003posteriori
 @f[
 \eta^2 = \sum_{K \in \Gamma_h} \eta^2_{K} +  \sum_{f_i \in F^i_h}  \eta^2_{f_i} + \sum_{f_b \in F^i_b}\eta^2_{f_b}
 @f]
@@ -86,7 +100,7 @@ where
 \eta^2_{K} = h_K^2 \left\| f + \nu \Delta u_h \right\|_K^2
 @f]
 @f[
-\eta^2_{f_i} = \sigma \left\| [u_h]  \right\|_f^2   +  h_f \left\|  [ \nu \nabla u_h \cdot \mathbf n ]  \right\|_f^2
+\eta^2_{f_i} = \sigma \left\| \jump{u_h}  \right\|_f^2   +  h_f \left\|  \jump{\nu \nabla u_h} \cdot \mathbf n   \right\|_f^2
 @f]
 @f[
 \eta_{f_b}^2 =  \sigma \left\| u_h-g_D \right\|_f^2
@@ -98,10 +112,10 @@ In each cell $K$, we compute
 \eta_{c}^2 = h_K^2 \left\| f + \nu \Delta u_h \right\|_K^2,
 @f]
 @f[
-\eta_{f}^2 = \sum_{f\in \partial K}\lbrace \sigma \left\| [  u_h ]  \right\|_f^2   +  h_f \left\|  [ \nu \nabla u_h \cdot \mathbf n ]  \right\|_f^2 \rbrace,
+\eta_{f}^2 = \sum_{f\in \partial K}\lbrace \sigma \left\| \jump{u_h}  \right\|_f^2   +  h_f \left\|  \jump{\nu \nabla u_h} \cdot \mathbf n  \right\|_f^2 \rbrace,
 @f]
 @f[
-\eta_{b}^2 = \sum_{f\in \partial K \cap \partial \Omega}  \sigma \left\| [  u_h -g_D ]  \right\|_f^2.
+\eta_{b}^2 = \sum_{f\in \partial K \cap \partial \Omega}  \sigma \left\| (u_h -g_D)  \right\|_f^2.
 @f]
 Then the error estimate square per cell is
 @f[
@@ -109,10 +123,3 @@ Then the error estimate square per cell is
 @f]
 Note that we compute $\eta_{local}^2$ instead of $\eta_{local}^2$ to simplify the implementation.
 The error estimate square per cell is store in a global vector, whose $L_1$ norm is equal to $\eta^2$.
-
-
-
-
-
-
-
