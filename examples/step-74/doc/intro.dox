@@ -86,7 +86,7 @@ is given by
 Here $[S_K]_{i,j} = (\nu \nabla \phi_i, \nabla\phi_j)_K$.
 
 To ensure the discrete coercivity, the penalization constant has to be large enough.
-There is no concensus in the literature on how to determine $\gamma$ in practice. One can just pick a large constant,
+There is no consensus in the literature on how to determine $\gamma$ in practice. One can just pick a large constant,
 while other options could be the multiples of $(p+1)^2$ or $p(p+1)$. In this code,
 we follow step-39 and use $\gamma = p(p+1)$.
 
