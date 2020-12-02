@@ -79,9 +79,9 @@ namespace TimeStepping
     RK_CLASSIC_FOURTH_ORDER,
     /**
      * Three-stage scheme of order three by Kennedy et al.
-     * @cite KennedyCarpenterLewis2000 While its stability region is
-     * significantly smaller than for the other schemes, it only involves three
-     * stages, so it is very competitive in terms of the work per stage.
+     * @cite KennedyCarpenterLewis2000 Its stability region is
+     * significantly smaller than for the higher order schemes, but due to three
+     * stages only, it is very competitive in terms of the work per stage.
      */
     LOW_STORAGE_RK_STAGE3_ORDER3,
     /**
