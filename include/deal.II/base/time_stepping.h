@@ -90,7 +90,7 @@ namespace TimeStepping
      */
     LOW_STORAGE_RK_STAGE5_ORDER4,
     /**
-     * Seven-stage scheme of order four.
+     * Seven-stage scheme of order four defined in the paper by Tselios and Simos @cite TseliosSimos2007
      */
     LOW_STORAGE_RK_STAGE7_ORDER4,
     /**
