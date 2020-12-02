@@ -79,8 +79,8 @@ namespace TimeStepping
     RK_CLASSIC_FOURTH_ORDER,
     /**
      * Three-stage scheme of order three by Kennedy et al.
-     * @cite KennedyCarpenterLewis2000 Its stability region is
-     * significantly smaller than for the higher order schemes, but due to three
+     * @cite KennedyCarpenterLewis2000. Its stability region is
+     * significantly smaller than the higher order schemes, but due to three
      * stages only, it is very competitive in terms of the work per stage.
      */
     LOW_STORAGE_RK_STAGE3_ORDER3,
@@ -90,7 +90,8 @@ namespace TimeStepping
      */
     LOW_STORAGE_RK_STAGE5_ORDER4,
     /**
-     * Seven-stage scheme of order four defined in the paper by Tselios and Simos @cite TseliosSimos2007
+     * Seven-stage scheme of order four defined in the paper by Tselios and
+     * Simos @cite TseliosSimos2007.
      */
     LOW_STORAGE_RK_STAGE7_ORDER4,
     /**
@@ -400,9 +401,9 @@ namespace TimeStepping
 
 
   /**
-   * The LowStorageRungeKutta class is derived from RungeKutta and implements a specific class of explicit
-   * methods. The main advantages of low-storage methods are the reduced memory
-   * consumption and the reduced memory access.
+   * The LowStorageRungeKutta class is derived from RungeKutta and implements a
+   * specific class of explicit methods. The main advantages of low-storage
+   * methods are the reduced memory consumption and the reduced memory access.
    */
   template <typename VectorType>
   class LowStorageRungeKutta : public RungeKutta<VectorType>
@@ -469,6 +470,9 @@ namespace TimeStepping
 
     /**
      * Get the coefficients of the scheme.
+     * Note that here vector @p a is not the conventional definition in terms of a
+     * Butcher tableau but merely one of the sub-diagonals. More details can be
+     * found in step-67 and the references therein.
      */
     void
     get_coefficients(std::vector<double> &a,
