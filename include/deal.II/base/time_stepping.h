@@ -85,7 +85,7 @@ namespace TimeStepping
      */
     LOW_STORAGE_RK_STAGE3_ORDER3,
     /**
-     * Five-stage scheme of order four, again
+     * Five-stage scheme of order four,
      * defined in the paper by Kennedy et al. @cite KennedyCarpenterLewis2000.
      */
     LOW_STORAGE_RK_STAGE5_ORDER4,
