@@ -400,7 +400,7 @@ namespace TimeStepping
 
 
   /**
-   * LowStorageRungeKutta is derived from RungeKutta and implement the explicit
+   * The LowStorageRungeKutta class is derived from RungeKutta and implements a specific class of explicit
    * methods. The main advantages of low-storage methods are the reduced memory
    * consumption and the reduced memory access.
    */
