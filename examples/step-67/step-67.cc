@@ -12,13 +12,14 @@
  * the top level directory of deal.II.
  *
  * ---------------------------------------------------------------------
-
  *
  * Author: Martin Kronbichler, 2020
  */
 
 // The include files are similar to the previous matrix-free tutorial programs
 // step-37, step-48, and step-59
+//#define HEX
+
 #include <deal.II/base/conditional_ostream.h>
 #include <deal.II/base/function.h>
 #include <deal.II/base/logstream.h>
@@ -27,7 +28,21 @@
 #include <deal.II/base/utilities.h>
 #include <deal.II/base/vectorization.h>
 
+//#ifdef HEX
 #include <deal.II/distributed/tria.h>
+//#else
+#include <deal.II/distributed/fully_distributed_tria.h>
+
+#include <deal.II/fe/mapping_fe.h>
+
+#include <deal.II/simplex/fe_lib.h>
+#include <deal.II/simplex/quadrature_lib.h>
+#include <deal.II/numerics/vector_tools.h>
+#include <deal.II/lac/precondition.h>
+#include <deal.II/lac/solver_cg.h>
+#include <deal.II/lac/solver_control.h>
+#include <deal.II/matrix_free/operators.h>
+//#endif
 
 #include <deal.II/dofs/dof_handler.h>
 
@@ -77,8 +92,8 @@ namespace Euler_DG
   constexpr unsigned int testcase             = 0;
   constexpr unsigned int dimension            = 2;
   constexpr unsigned int n_global_refinements = 3;
-  constexpr unsigned int fe_degree            = 5;
-  constexpr unsigned int n_q_points_1d        = fe_degree + 2;
+  constexpr unsigned int fe_degree            = 2;
+  constexpr unsigned int n_q_points_1d        = fe_degree + 1;
 
   using Number = double;
 
@@ -720,6 +735,9 @@ namespace Euler_DG
                const LinearAlgebra::distributed::Vector<Number> &src,
                LinearAlgebra::distributed::Vector<Number> &      dst) const;
 
+    void vmult(LinearAlgebra::distributed::Vector<Number> &      dst,
+               const LinearAlgebra::distributed::Vector<Number> &src) const;
+
     void
     perform_stage(const Number cur_time,
                   const Number factor_solution,
@@ -761,6 +779,12 @@ namespace Euler_DG
       const std::pair<unsigned int, unsigned int> &     cell_range) const;
 
     void local_apply_cell(
+      const MatrixFree<dim, Number> &                   data,
+      LinearAlgebra::distributed::Vector<Number> &      dst,
+      const LinearAlgebra::distributed::Vector<Number> &src,
+      const std::pair<unsigned int, unsigned int> &     cell_range) const;
+
+    void local_apply_vmult(
       const MatrixFree<dim, Number> &                   data,
       LinearAlgebra::distributed::Vector<Number> &      dst,
       const LinearAlgebra::distributed::Vector<Number> &src,
@@ -814,8 +838,14 @@ namespace Euler_DG
     const std::vector<const DoFHandler<dim> *> dof_handlers = {&dof_handler};
     const AffineConstraints<double>            dummy;
     const std::vector<const AffineConstraints<double> *> constraints = {&dummy};
+#ifdef HEX
     const std::vector<Quadrature<1>> quadratures = {QGauss<1>(n_q_points_1d),
                                                     QGauss<1>(fe_degree + 1)};
+#else
+    const std::vector<Quadrature<dim>> quadratures = {
+      Simplex::QGauss<dim>(n_q_points_1d), Simplex::QGauss<dim>(fe_degree + 1)};
+#endif
+
 
     typename MatrixFree<dim, Number>::AdditionalData additional_data;
     additional_data.mapping_update_flags =
@@ -1018,7 +1048,11 @@ namespace Euler_DG
     const LinearAlgebra::distributed::Vector<Number> &src,
     const std::pair<unsigned int, unsigned int> &     cell_range) const
   {
+#ifdef HEX
     FEEvaluation<dim, degree, n_points_1d, dim + 2, Number> phi(data);
+#else
+    FEEvaluation<dim, -1, n_points_1d, dim + 2, Number>     phi(data);
+#endif
 
     Tensor<1, dim, VectorizedArray<Number>> constant_body_force;
     const Functions::ConstantFunction<dim> *constant_function =
@@ -1062,7 +1096,31 @@ namespace Euler_DG
       }
   }
 
+  template <int dim, int degree, int n_points_1d>
+  void EulerOperator<dim, degree, n_points_1d>::local_apply_vmult(
+    const MatrixFree<dim, Number> &,
+    LinearAlgebra::distributed::Vector<Number> &      dst,
+    const LinearAlgebra::distributed::Vector<Number> &src,
+    const std::pair<unsigned int, unsigned int> &     cell_range) const
+  {
+#ifdef HEX
+    FEEvaluation<dim, degree, n_points_1d, dim + 2, Number> phi(data);
+#else
+    FEEvaluation<dim, -1, n_points_1d, dim + 2, Number>     phi(data);
+#endif
 
+    for (unsigned int cell = cell_range.first; cell < cell_range.second; ++cell)
+      {
+        phi.reinit(cell);
+        phi.gather_evaluate(src, EvaluationFlags::values);
+
+        for (unsigned int q = 0; q < phi.n_q_points; ++q)
+          {
+            phi.submit_value(phi.get_value(q), q);
+          }
+        phi.integrate_scatter(EvaluationFlags::values, dst);
+      }
+  }
 
   // The next function concerns the computation of integrals on interior
   // faces, where we need evaluators from both cells adjacent to the face. We
@@ -1109,10 +1167,15 @@ namespace Euler_DG
     const LinearAlgebra::distributed::Vector<Number> &src,
     const std::pair<unsigned int, unsigned int> &     face_range) const
   {
+#ifdef HEX
     FEFaceEvaluation<dim, degree, n_points_1d, dim + 2, Number> phi_m(data,
                                                                       true);
     FEFaceEvaluation<dim, degree, n_points_1d, dim + 2, Number> phi_p(data,
                                                                       false);
+#else
+    FEFaceEvaluation<dim, -1, n_points_1d, dim + 2, Number> phi_m(data, true);
+    FEFaceEvaluation<dim, -1, n_points_1d, dim + 2, Number> phi_p(data, false);
+#endif
 
     for (unsigned int face = face_range.first; face < face_range.second; ++face)
       {
@@ -1197,7 +1260,11 @@ namespace Euler_DG
     const LinearAlgebra::distributed::Vector<Number> &src,
     const std::pair<unsigned int, unsigned int> &     face_range) const
   {
+#ifdef HEX
     FEFaceEvaluation<dim, degree, n_points_1d, dim + 2, Number> phi(data, true);
+#else
+    FEFaceEvaluation<dim, -1, n_points_1d, dim + 2, Number> phi(data, true);
+#endif
 
     for (unsigned int face = face_range.first; face < face_range.second; ++face)
       {
@@ -1385,7 +1452,17 @@ namespace Euler_DG
     }
   }
 
+  template <int dim, int degree, int n_points_1d>
+  void EulerOperator<dim, degree, n_points_1d>::vmult(
+    LinearAlgebra::distributed::Vector<Number> &      dst,
+    const LinearAlgebra::distributed::Vector<Number> &src) const
+  {
+    {
+      TimerOutput::Scope t(timer, "apply - vmult");
 
+      data.cell_loop(&EulerOperator::local_apply_vmult, this, dst, src, true);
+    }
+  }
 
   // Let us move to the function that does an entire stage of a Runge--Kutta
   // update. It calls EulerOperator::apply() followed by some updates
@@ -1458,6 +1535,7 @@ namespace Euler_DG
 
     {
       TimerOutput::Scope t(timer, "rk_stage - inv mass + vec upd");
+#ifdef HEX
       data.cell_loop(
         &EulerOperator::local_apply_inverse_mass_matrix,
         this,
@@ -1489,6 +1567,43 @@ namespace Euler_DG
                 }
             }
         });
+#else
+      using MatrixType = MatrixFreeOperators::MassOperator<
+        dim,
+        -1,
+        0,
+        dim + 2,
+        LinearAlgebra::distributed::Vector<Number>>;
+      MatrixType mass_matrix;
+
+      std::shared_ptr<MatrixFree<dim, Number>> matrix_free(
+        new MatrixFree<dim, Number>(data));
+      mass_matrix.initialize(matrix_free);
+      mass_matrix.compute_diagonal();
+
+      ReductionControl control(6 * vec_ki.size(), 0., 1e-12, false, false);
+      SolverCG<LinearAlgebra::distributed::Vector<Number>> cg(control);
+      //      PreconditionJacobi<MatrixType> preconditioner;
+      //      preconditioner.initialize(mass_matrix, 1.);
+
+      //      cg.solve(mass_matrix, next_ri, vec_ki, preconditioner);
+      cg.solve(*this, next_ri, vec_ki, PreconditionIdentity());
+
+      const Number ai = factor_ai;
+      const Number bi = factor_solution;
+      if (ai == Number())
+        {
+          solution.sadd(1., bi, next_ri);
+        }
+      else
+        {
+          LinearAlgebra::distributed::Vector<Number> tmp(solution);
+          tmp = solution;
+          solution.add(bi, next_ri);
+          next_ri.sadd(ai, 1., tmp);
+        }
+
+#endif
     }
   }
 
@@ -1591,7 +1706,11 @@ namespace Euler_DG
   {
     TimerOutput::Scope t(timer, "compute errors");
     double             errors_squared[3] = {};
+#ifdef HEX
     FEEvaluation<dim, degree, n_points_1d, dim + 2, Number> phi(data, 0, 0);
+#else
+    FEEvaluation<dim, -1, n_points_1d, dim + 2, Number> phi(data, 0, 0);
+#endif
 
     for (unsigned int cell = 0; cell < data.n_cell_batches(); ++cell)
       {
@@ -1673,7 +1792,11 @@ namespace Euler_DG
   {
     TimerOutput::Scope t(timer, "compute transport speed");
     Number             max_transport = 0;
+#ifdef HEX
     FEEvaluation<dim, degree, degree + 1, dim + 2, Number> phi(data, 0, 1);
+#else
+    FEEvaluation<dim, -1, degree + 1, dim + 2, Number>  phi(data, 0, 1);
+#endif
 
     for (unsigned int cell = 0; cell < data.n_cell_batches(); ++cell)
       {
@@ -1773,14 +1896,19 @@ namespace Euler_DG
     ConditionalOStream pcout;
 
 #ifdef DEAL_II_WITH_P4EST
+#  ifdef HEX
     parallel::distributed::Triangulation<dim> triangulation;
+    MappingQGeneric<dim>                      mapping;
+#  else
+    parallel::fullydistributed::Triangulation<dim> triangulation;
+    MappingFE<dim>                                 mapping;
+#  endif
 #else
-    Triangulation<dim> triangulation;
+    Triangulation<dim>                                  triangulation;
 #endif
 
-    FESystem<dim>        fe;
-    MappingQGeneric<dim> mapping;
-    DoFHandler<dim>      dof_handler;
+    FESystem<dim>   fe;
+    DoFHandler<dim> dof_handler;
 
     TimerOutput timer;
 
@@ -1936,8 +2064,13 @@ namespace Euler_DG
 #ifdef DEAL_II_WITH_P4EST
     , triangulation(MPI_COMM_WORLD)
 #endif
-    , fe(FE_DGQ<dim>(fe_degree), dim + 2)
+#ifdef HEX
     , mapping(fe_degree)
+    , fe(FE_DGQ<dim>(fe_degree), dim + 2)
+#else
+    , mapping(Simplex::FE_DGP<dim>(1))
+    , fe(Simplex::FE_DGP<dim>(fe_degree), dim + 2)
+#endif
     , dof_handler(triangulation)
     , timer(pcout, TimerOutput::never, TimerOutput::wall_times)
     , euler_operator(timer)
@@ -1980,11 +2113,34 @@ namespace Euler_DG
             upper_right[0] = 10;
             for (unsigned int d = 1; d < dim; ++d)
               upper_right[d] = 5;
-
+#ifdef HEX
             GridGenerator::hyper_rectangle(triangulation,
                                            lower_left,
                                            upper_right);
             triangulation.refine_global(2);
+#else
+            const unsigned int mpi_size =
+              Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD);
+            auto construction_data = TriangulationDescription::Utilities::
+              create_description_from_triangulation_in_groups<dim, dim>(
+                [&](Triangulation<dim> &tria) {
+                  Triangulation<dim> hex_tria;
+                  GridGenerator::hyper_rectangle(hex_tria,
+                                                 lower_left,
+                                                 upper_right);
+                  GridGenerator::convert_hypercube_to_simplex_mesh(hex_tria,
+                                                                   tria);
+                  tria.refine_global(1 + n_global_refinements);
+                },
+                [&](Triangulation<dim> &tria_serial,
+                    const MPI_Comm /*mpi_comm*/,
+                    const unsigned int /*group_size*/) {
+                  GridTools::partition_triangulation(mpi_size, tria_serial);
+                },
+                MPI_COMM_WORLD,
+                1);
+            triangulation.create_triangulation(construction_data);
+#endif
 
             euler_operator.set_inflow_boundary(
               0, std::make_unique<ExactSolution<dim>>(0));
@@ -2016,8 +2172,9 @@ namespace Euler_DG
         default:
           Assert(false, ExcNotImplemented());
       }
-
+#ifdef HEX
     triangulation.refine_global(n_global_refinements);
+#endif
 
     dof_handler.distribute_dofs(fe);
 
@@ -2100,12 +2257,15 @@ namespace Euler_DG
     {
       TimerOutput::Scope t(timer, "output");
 
-      Postprocessor postprocessor;
-      DataOut<dim>  data_out;
 
+      DataOut<dim> data_out;
+
+#ifdef HEX
+      Postprocessor         postprocessor;
       DataOutBase::VtkFlags flags;
       flags.write_higher_order_cells = true;
       data_out.set_flags(flags);
+#endif
 
       data_out.attach_dof_handler(dof_handler);
       {
@@ -2127,13 +2287,29 @@ namespace Euler_DG
 
         data_out.add_data_vector(dof_handler, solution, names, interpretation);
       }
+#ifdef HEX
       data_out.add_data_vector(solution, postprocessor);
+#endif
 
       LinearAlgebra::distributed::Vector<Number> reference;
       if (testcase == 0 && dim == 2)
         {
           reference.reinit(solution);
+
+#ifdef HEX
           euler_operator.project(ExactSolution<dim>(time), reference);
+#else
+
+          AffineConstraints<double> dummy;
+          dummy.close();
+          VectorTools::project(mapping,
+                               dof_handler,
+                               dummy,
+                               Simplex::QGauss<dim>(fe_degree + 1),
+                               ExactSolution<dim>(time),
+                               reference);
+#endif
+
           reference.sadd(-1., 1, solution);
           std::vector<std::string> names;
           names.emplace_back("error_density");
@@ -2160,10 +2336,11 @@ namespace Euler_DG
       Vector<double> mpi_owner(triangulation.n_active_cells());
       mpi_owner = Utilities::MPI::this_mpi_process(MPI_COMM_WORLD);
       data_out.add_data_vector(mpi_owner, "owner");
-
       data_out.build_patches(mapping,
                              fe.degree,
                              DataOut<dim>::curved_inner_cells);
+
+      data_out.build_patches(mapping);
 
       const std::string filename =
         "solution_" + Utilities::int_to_string(result_number, 3) + ".vtu";
@@ -2212,7 +2389,18 @@ namespace Euler_DG
     rk_register_1.reinit(solution);
     rk_register_2.reinit(solution);
 
+#ifdef HEX
     euler_operator.project(ExactSolution<dim>(time), solution);
+#else
+    AffineConstraints<double> dummy;
+    dummy.close();
+    VectorTools::project(mapping,
+                         dof_handler,
+                         dummy,
+                         Simplex::QGauss<dim>(fe_degree + 1),
+                         ExactSolution<dim>(time),
+                         solution);
+#endif
 
     double min_vertex_distance = std::numeric_limits<double>::max();
     for (const auto &cell : triangulation.active_cell_iterators())
