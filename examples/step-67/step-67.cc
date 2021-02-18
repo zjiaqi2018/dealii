@@ -1191,6 +1191,8 @@ namespace Euler_DG
               euler_numerical_flux<dim>(phi_m.get_value(q),
                                         phi_p.get_value(q),
                                         phi_m.get_normal_vector(q));
+            //	    std::cout<<" phim: "<<phi_m.get_value(q)
+            //	     <<" phip: "<<phi_p.get_value(q)<<std::endl;
             phi_m.submit_value(-numerical_flux, q);
             phi_p.submit_value(numerical_flux, q);
           }
@@ -1531,7 +1533,7 @@ namespace Euler_DG
                 MatrixFree<dim, Number>::DataAccessOnFaces::values,
                 MatrixFree<dim, Number>::DataAccessOnFaces::values);
     }
-
+    //    exit(0);
 
     {
       TimerOutput::Scope t(timer, "rk_stage - inv mass + vec upd");
@@ -2400,6 +2402,7 @@ namespace Euler_DG
                          Simplex::QGauss<dim>(fe_degree + 1),
                          ExactSolution<dim>(time),
                          solution);
+    solution.update_ghost_values();
 #endif
 
     double min_vertex_distance = std::numeric_limits<double>::max();
