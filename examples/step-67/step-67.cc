@@ -2470,24 +2470,24 @@ namespace Euler_DG
 
         time += time_step;
 
-	/*
-        if (static_cast<int>(time / output_tick) !=
-              static_cast<int>((time - time_step) / output_tick) ||
-            time >= final_time - 1e-12)
-          output_results(
-            static_cast<unsigned int>(std::round(time / output_tick)));
-	*/
+        /*
+              if (static_cast<int>(time / output_tick) !=
+                    static_cast<int>((time - time_step) / output_tick) ||
+                  time >= final_time - 1e-12)
+                output_results(
+                  static_cast<unsigned int>(std::round(time / output_tick)));
+        */
       }
-        const std::array<double, 3> errors =
+    const std::array<double, 3> errors =
       euler_operator.compute_errors(ExactSolution<dim>(time), solution);
     const std::string quantity_name = testcase == 0 ? "error" : "norm";
-        pcout << "Time:" << std::setw(8) << std::setprecision(3) << time
+    pcout << "Time:" << std::setw(8) << std::setprecision(3) << time
           << ", dt: " << std::setw(8) << std::setprecision(2) << time_step
           << ", " << quantity_name << " rho: " << std::setprecision(4)
           << std::setw(10) << errors[0] << ", rho * u: " << std::setprecision(4)
           << std::setw(10) << errors[1] << ", energy:" << std::setprecision(4)
           << std::setw(10) << errors[2] << std::endl;
-    
+
 
     //    timer.print_wall_time_statistics(MPI_COMM_WORLD);
     //    pcout << std::endl;
