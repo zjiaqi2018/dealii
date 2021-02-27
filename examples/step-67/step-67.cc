@@ -35,8 +35,10 @@
 
 #include <deal.II/fe/mapping_fe.h>
 
-#include <deal.II/simplex/fe_lib.h>
-#include <deal.II/simplex/quadrature_lib.h>
+//#include <deal.II/simplex/fe_lib.h>
+#include <deal.II/fe/fe_simplex_p.h>
+//#include <deal.II/simplex/quadrature_lib.h>
+#include <deal.II/base/quadrature_lib.h>
 #include <deal.II/numerics/vector_tools.h>
 #include <deal.II/lac/precondition.h>
 #include <deal.II/lac/solver_cg.h>
@@ -843,7 +845,7 @@ namespace Euler_DG
                                                     QGauss<1>(fe_degree + 1)};
 #else
     const std::vector<Quadrature<dim>> quadratures = {
-      Simplex::QGauss<dim>(n_q_points_1d), Simplex::QGauss<dim>(fe_degree + 1)};
+      QGaussSimplex<dim>(n_q_points_1d), QGaussSimplex<dim>(fe_degree + 1)};
 #endif
 
 
@@ -2070,8 +2072,8 @@ namespace Euler_DG
     , mapping(fe_degree)
     , fe(FE_DGQ<dim>(fe_degree), dim + 2)
 #else
-    , mapping(Simplex::FE_DGP<dim>(1))
-    , fe(Simplex::FE_DGP<dim>(fe_degree), dim + 2)
+    , mapping(FE_SimplexDGP<dim>(1))
+    , fe(FE_SimplexDGP<dim>(fe_degree), dim + 2)
 #endif
     , dof_handler(triangulation)
     , timer(pcout, TimerOutput::never, TimerOutput::wall_times)
@@ -2189,6 +2191,7 @@ namespace Euler_DG
     // digits. This can be done via "locales", although the way this works is
     // not particularly intuitive. step-32 explains this in slightly more
     // detail.
+    /*
     std::locale s = pcout.get_stream().getloc();
     pcout.get_stream().imbue(std::locale(""));
     pcout << "Number of degrees of freedom: " << dof_handler.n_dofs()
@@ -2197,6 +2200,7 @@ namespace Euler_DG
           << Utilities::pow(fe_degree + 1, dim) << " [dofs/cell/var] )"
           << std::endl;
     pcout.get_stream().imbue(s);
+    */
   }
 
 
@@ -2256,6 +2260,7 @@ namespace Euler_DG
           << std::setw(10) << errors[1] << ", energy:" << std::setprecision(4)
           << std::setw(10) << errors[2] << std::endl;
 
+
     {
       TimerOutput::Scope t(timer, "output");
 
@@ -2307,7 +2312,7 @@ namespace Euler_DG
           VectorTools::project(mapping,
                                dof_handler,
                                dummy,
-                               Simplex::QGauss<dim>(fe_degree + 1),
+                               QGaussSimplex<dim>(fe_degree + 1),
                                ExactSolution<dim>(time),
                                reference);
 #endif
@@ -2369,9 +2374,9 @@ namespace Euler_DG
   void EulerProblem<dim>::run()
   {
     {
+      /*
       const unsigned int n_vect_number = VectorizedArray<Number>::size();
       const unsigned int n_vect_bits   = 8 * sizeof(Number) * n_vect_number;
-
       pcout << "Running with "
             << Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD)
             << " MPI processes" << std::endl;
@@ -2380,6 +2385,7 @@ namespace Euler_DG
             << " = " << n_vect_bits << " bits ("
             << Utilities::System::get_current_vectorization_level() << ")"
             << std::endl;
+      */
     }
 
     make_grid_and_dofs();
@@ -2399,7 +2405,7 @@ namespace Euler_DG
     VectorTools::project(mapping,
                          dof_handler,
                          dummy,
-                         Simplex::QGauss<dim>(fe_degree + 1),
+                         QGaussSimplex<dim>(fe_degree + 1),
                          ExactSolution<dim>(time),
                          solution);
     solution.update_ghost_values();
@@ -2415,14 +2421,16 @@ namespace Euler_DG
 
     time_step = courant_number * integrator.n_stages() /
                 euler_operator.compute_cell_transport_speed(solution);
+    /*
     pcout << "Time step size: " << time_step
           << ", minimal h: " << min_vertex_distance
           << ", initial transport scaling: "
           << 1. / euler_operator.compute_cell_transport_speed(solution)
           << std::endl
           << std::endl;
+    */
 
-    output_results(0);
+    //    output_results(0);
 
     // Now we are ready to start the time loop, which we run until the time
     // has reached the desired end time. Every 5 time steps, we compute a new
@@ -2462,15 +2470,27 @@ namespace Euler_DG
 
         time += time_step;
 
+	/*
         if (static_cast<int>(time / output_tick) !=
               static_cast<int>((time - time_step) / output_tick) ||
             time >= final_time - 1e-12)
           output_results(
             static_cast<unsigned int>(std::round(time / output_tick)));
+	*/
       }
+        const std::array<double, 3> errors =
+      euler_operator.compute_errors(ExactSolution<dim>(time), solution);
+    const std::string quantity_name = testcase == 0 ? "error" : "norm";
+        pcout << "Time:" << std::setw(8) << std::setprecision(3) << time
+          << ", dt: " << std::setw(8) << std::setprecision(2) << time_step
+          << ", " << quantity_name << " rho: " << std::setprecision(4)
+          << std::setw(10) << errors[0] << ", rho * u: " << std::setprecision(4)
+          << std::setw(10) << errors[1] << ", energy:" << std::setprecision(4)
+          << std::setw(10) << errors[2] << std::endl;
+    
 
-    timer.print_wall_time_statistics(MPI_COMM_WORLD);
-    pcout << std::endl;
+    //    timer.print_wall_time_statistics(MPI_COMM_WORLD);
+    //    pcout << std::endl;
   }
 
 } // namespace Euler_DG
