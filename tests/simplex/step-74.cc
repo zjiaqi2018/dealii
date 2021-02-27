@@ -32,7 +32,11 @@
 
 #include <deal.II/fe/fe_dgq.h>
 #include <deal.II/fe/fe_interface_values.h>
+#include <deal.II/fe/fe_pyramid_p.h>
+#include <deal.II/fe/fe_simplex_p.h>
+#include <deal.II/fe/fe_simplex_p_bubbles.h>
 #include <deal.II/fe/fe_values.h>
+#include <deal.II/fe/fe_wedge_p.h>
 #include <deal.II/fe/mapping_fe.h>
 #include <deal.II/fe/mapping_q1.h>
 
@@ -55,9 +59,6 @@
 #include <deal.II/numerics/data_out.h>
 #include <deal.II/numerics/derivative_approximation.h>
 #include <deal.II/numerics/vector_tools.h>
-
-#include <deal.II/simplex/fe_lib.h>
-#include <deal.II/simplex/quadrature_lib.h>
 
 #include "../tests.h"
 
@@ -273,12 +274,12 @@ namespace Step74
     const unsigned     degree;
 
 #ifdef USE_SIMPLEX
-    const Simplex::QGauss<dim>     quadrature;
-    const Simplex::QGauss<dim - 1> face_quadrature;
-    const Simplex::QGauss<dim>     quadrature_2;
-    const Simplex::QGauss<dim - 1> face_quadrature_2;
-    const MappingFE<dim>           mapping;
-    const Simplex::FE_DGP<dim>     fe;
+    const QGaussSimplex<dim>     quadrature;
+    const QGaussSimplex<dim - 1> face_quadrature;
+    const QGaussSimplex<dim>     quadrature_2;
+    const QGaussSimplex<dim - 1> face_quadrature_2;
+    const MappingFE<dim>         mapping;
+    const FE_SimplexDGP<dim>     fe;
 #else
     const QGauss<dim>     quadrature;
     const QGauss<dim - 1> face_quadrature;
@@ -318,7 +319,7 @@ namespace Step74
     , quadrature_2(degree + 1)
     , face_quadrature_2(degree + 1)
 #ifdef USE_SIMPLEX
-    , mapping(Simplex::FE_P<dim>(1))
+    , mapping(FE_SimplexP<dim>(1))
 #else
     , mapping()
 #endif

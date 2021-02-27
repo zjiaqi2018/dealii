@@ -15,8 +15,8 @@
 
 
 /**
- * Test p-multigrid for a uniformly refined mesh both for simplex and
- * hypercube mesh.
+ * Test p-multigrid for a uniformly and locally refined meshes both for
+ * simplex and hypercube mesh.
  */
 
 #include "multigrid_util.h"
@@ -25,7 +25,8 @@ template <int dim, typename Number = double>
 void
 test(const unsigned int n_refinements,
      const unsigned int fe_degree_fine,
-     const bool         do_simplex_mesh)
+     const bool         do_simplex_mesh,
+     const unsigned int mesh_type)
 {
   using VectorType = LinearAlgebra::distributed::Vector<Number>;
 
@@ -34,11 +35,36 @@ test(const unsigned int n_refinements,
     GridGenerator::subdivided_hyper_cube_with_simplices(tria, 2);
   else
     GridGenerator::subdivided_hyper_cube(tria, 2);
-  tria.refine_global(n_refinements);
 
-  const auto level_degrees = MGTransferGlobalCoarseningTools::create_p_sequence(
-    fe_degree_fine,
-    MGTransferGlobalCoarseningTools::PolynomialSequenceType::bisect);
+  if (mesh_type == 0)
+    {
+      tria.refine_global(n_refinements);
+    }
+  else if (mesh_type == 1)
+    {
+      for (unsigned int i = 1; i < n_refinements; i++)
+        {
+          for (auto cell : tria.active_cell_iterators())
+            if (cell->is_locally_owned())
+              {
+                bool flag = true;
+                for (int d = 0; d < dim; d++)
+                  if (cell->center()[d] > 0.5)
+                    flag = false;
+                if (flag)
+                  cell->set_refine_flag();
+              }
+          tria.execute_coarsening_and_refinement();
+        }
+    }
+  else
+    AssertThrow(false, ExcNotImplemented());
+
+  const auto level_degrees =
+    MGTransferGlobalCoarseningTools::create_polynomial_coarsening_sequence(
+      fe_degree_fine,
+      MGTransferGlobalCoarseningTools::PolynomialCoarseningSequenceType::
+        bisect);
 
   const unsigned int min_level = 0;
   const unsigned int max_level = level_degrees.size() - 1;
@@ -64,9 +90,9 @@ test(const unsigned int n_refinements,
 
       if (do_simplex_mesh)
         {
-          fe   = std::make_unique<Simplex::FE_P<dim>>(level_degrees[l]);
-          quad = std::make_unique<Simplex::QGauss<dim>>(level_degrees[l] + 1);
-          mapping = std::make_unique<MappingFE<dim>>(Simplex::FE_P<dim>(1));
+          fe      = std::make_unique<FE_SimplexP<dim>>(level_degrees[l]);
+          quad    = std::make_unique<QGaussSimplex<dim>>(level_degrees[l] + 1);
+          mapping = std::make_unique<MappingFE<dim>>(FE_SimplexP<dim>(1));
         }
       else
         {
@@ -88,6 +114,7 @@ test(const unsigned int n_refinements,
       constraint.reinit(locally_relevant_dofs);
       VectorTools::interpolate_boundary_values(
         *mapping, dof_handler, 0, Functions::ZeroFunction<dim>(), constraint);
+      DoFTools::make_hanging_node_constraints(dof_handler, constraint);
       constraint.close();
 
       // set up operator
@@ -101,8 +128,9 @@ test(const unsigned int n_refinements,
                                                 constraints[l + 1],
                                                 constraints[l]);
 
-  MGTransferGlobalCoarsening<Operator<dim, Number>, VectorType> transfer(
-    operators, transfers);
+  MGTransferGlobalCoarsening<dim, VectorType> transfer(
+    transfers,
+    [&](const auto l, auto &vec) { operators[l].initialize_dof_vector(vec); });
 
   GMGParameters mg_data; // TODO
 
@@ -123,6 +151,8 @@ test(const unsigned int n_refinements,
            operators[max_level],
            operators,
            transfer);
+
+  constraints[max_level].distribute(dst);
 
   deallog << dim << " " << fe_degree_fine << " " << n_refinements << " "
           << (do_simplex_mesh ? "tri " : "quad") << " "
@@ -148,14 +178,14 @@ main(int argc, char **argv)
 
   deallog.precision(8);
 
-  for (unsigned int n_refinements = 2; n_refinements <= 4; ++n_refinements)
-    for (unsigned int degree = 2; degree <= 4; ++degree)
-      test<2>(n_refinements, degree, false /*quadrilateral*/);
+  for (unsigned int mesh_type = 0; mesh_type < 2; ++mesh_type)
+    {
+      for (unsigned int n_refinements = 2; n_refinements <= 4; ++n_refinements)
+        for (unsigned int degree = 2; degree <= 4; ++degree)
+          test<2>(n_refinements, degree, false /*quadrilateral*/, mesh_type);
 
-  return 0; // TODO: enable simplex test once MGTwoLevelTransfer works for
-            // simplex meshes
-
-  for (unsigned int n_refinements = 2; n_refinements <= 4; ++n_refinements)
-    for (unsigned int degree = 2; degree <= 2; ++degree)
-      test<2>(n_refinements, degree, true /*triangle*/);
+      for (unsigned int n_refinements = 2; n_refinements <= 4; ++n_refinements)
+        for (unsigned int degree = 2; degree <= 2; ++degree)
+          test<2>(n_refinements, degree, true /*triangle*/, mesh_type);
+    }
 }

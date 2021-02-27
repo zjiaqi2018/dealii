@@ -14,12 +14,13 @@
 // ---------------------------------------------------------------------
 
 
-// Test ReferenceCell::unit_tangential_vectors() for all reference-cell types.
+// Test ReferenceCell::unit_tangential_vectors() and ::unit_normal_vectors()
+// for all reference-cell types.
 
+
+#include <deal.II/base/quadrature_lib.h>
 
 #include <deal.II/grid/reference_cell.h>
-
-#include <deal.II/simplex/quadrature_lib.h>
 
 #include "../tests.h"
 
@@ -27,15 +28,18 @@ using namespace dealii;
 
 template <int dim>
 void
-test(const ReferenceCell::Type &reference_cell)
+test(const ReferenceCell &reference_cell)
 {
-  for (const auto face_no :
-       ReferenceCell::internal::Info::get_cell(reference_cell).face_indices())
-    for (unsigned int i = 0; i < dim - 1; ++i)
-      deallog << ReferenceCell::unit_tangential_vectors<dim>(reference_cell,
-                                                             face_no,
-                                                             i)
+  for (const auto face_no : reference_cell.face_indices())
+    {
+      deallog << reference_cell.template unit_normal_vectors<dim>(face_no)
               << std::endl;
+
+      for (unsigned int i = 0; i < dim - 1; ++i)
+        deallog << reference_cell.template unit_tangential_vectors<dim>(face_no,
+                                                                        i)
+                << std::endl;
+    }
   deallog << std::endl;
 }
 
@@ -46,10 +50,10 @@ main()
 {
   initlog();
 
-  test<2>(ReferenceCell::Type::Tri);
-  test<2>(ReferenceCell::Type::Quad);
-  test<3>(ReferenceCell::Type::Tet);
-  test<3>(ReferenceCell::Type::Pyramid);
-  test<3>(ReferenceCell::Type::Wedge);
-  test<3>(ReferenceCell::Type::Hex);
+  test<2>(ReferenceCells::Triangle);
+  test<2>(ReferenceCells::Quadrilateral);
+  test<3>(ReferenceCells::Tetrahedron);
+  test<3>(ReferenceCells::Pyramid);
+  test<3>(ReferenceCells::Wedge);
+  test<3>(ReferenceCells::Hexahedron);
 }

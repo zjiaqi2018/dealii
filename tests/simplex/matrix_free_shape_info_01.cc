@@ -15,22 +15,25 @@
 
 
 
-// Test ShapeData for Simplex::FE_P and Simplex::QGauss
+// Test ShapeData for FE_SimplexP and QGaussSimplex
+
+#include <deal.II/base/quadrature_lib.h>
 
 #include <deal.II/dofs/dof_handler.h>
 
+#include <deal.II/fe/fe_pyramid_p.h>
+#include <deal.II/fe/fe_simplex_p.h>
+#include <deal.II/fe/fe_simplex_p_bubbles.h>
 #include <deal.II/fe/fe_values.h>
+#include <deal.II/fe/fe_wedge_p.h>
 #include <deal.II/fe/mapping_fe.h>
 
+#include <deal.II/grid/grid_generator.h>
 #include <deal.II/grid/tria.h>
 
 #include <deal.II/matrix_free/matrix_free.h>
 
 #include <deal.II/numerics/vector_tools.h>
-
-#include <deal.II/simplex/fe_lib.h>
-#include <deal.II/simplex/grid_generator.h>
-#include <deal.II/simplex/quadrature_lib.h>
 
 #include "../tests.h"
 
@@ -121,9 +124,9 @@ test(const FiniteElement<dim, spacedim> &fe)
   DoFHandler<dim> dof_handler(tria);
   dof_handler.distribute_dofs(fe);
 
-  MappingFE<dim> mapping(Simplex::FE_P<dim>(1));
+  MappingFE<dim> mapping(FE_SimplexP<dim>(1));
 
-  Simplex::QGauss<dim> quadrature(1);
+  QGaussSimplex<dim> quadrature(1);
 
   internal::MatrixFreeFunctions::ShapeInfo<Number> shape_info(quadrature, fe);
 
@@ -190,5 +193,5 @@ main()
 {
   initlog();
 
-  test<2>(Simplex::FE_P<2>(2));
+  test<2>(FE_SimplexP<2>(2));
 }

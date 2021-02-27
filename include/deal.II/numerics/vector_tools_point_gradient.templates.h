@@ -49,7 +49,7 @@ namespace VectorTools
       &gradients)
   {
     if (dof.has_hp_capabilities() == false)
-      point_gradient(StaticMappingQ1<dim, spacedim>::mapping,
+      point_gradient(get_default_linear_mapping(dof.get_triangulation()),
                      dof,
                      fe_function,
                      point,
@@ -70,7 +70,7 @@ namespace VectorTools
                  const Point<spacedim> &          point)
   {
     if (dof.has_hp_capabilities() == false)
-      return point_gradient(StaticMappingQ1<dim, spacedim>::mapping,
+      return point_gradient(get_default_linear_mapping(dof.get_triangulation()),
                             dof,
                             fe_function,
                             point);

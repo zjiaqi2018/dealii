@@ -16,6 +16,8 @@
 
 // Solve Poisson problem problem on a mixed mesh with DG and MatrixFree.
 
+#include <deal.II/base/quadrature_lib.h>
+
 #include <deal.II/distributed/tria.h>
 
 #include <deal.II/dofs/dof_handler.h>
@@ -23,7 +25,11 @@
 
 #include <deal.II/fe/fe_dgq.h>
 #include <deal.II/fe/fe_interface_values.h>
+#include <deal.II/fe/fe_pyramid_p.h>
 #include <deal.II/fe/fe_q.h>
+#include <deal.II/fe/fe_simplex_p.h>
+#include <deal.II/fe/fe_simplex_p_bubbles.h>
+#include <deal.II/fe/fe_wedge_p.h>
 #include <deal.II/fe/mapping_fe.h>
 #include <deal.II/fe/mapping_q.h>
 
@@ -45,10 +51,6 @@
 
 #include <deal.II/numerics/data_out.h>
 #include <deal.II/numerics/vector_tools.h>
-
-#include <deal.II/simplex/fe_lib.h>
-#include <deal.II/simplex/grid_generator.h>
-#include <deal.II/simplex/quadrature_lib.h>
 
 #include "../tests.h"
 
@@ -245,23 +247,23 @@ test(const unsigned version, const unsigned int degree)
   else if (version == 2)
     GridGenerator::subdivided_hyper_cube_with_simplices_mix(tria, subdivisions);
 
-  Simplex::FE_DGP<dim>  fe1(degree);
+  FE_SimplexDGP<dim>    fe1(degree);
   FE_DGQ<dim>           fe2(degree);
   hp::FECollection<dim> fes(fe1, fe2);
 
-  Simplex::QGauss<dim> quad1(degree + 1);
+  QGaussSimplex<dim>   quad1(degree + 1);
   QGauss<dim>          quad2(degree + 1);
   hp::QCollection<dim> quads(quad1, quad2);
 
-  MappingFE<dim>             mapping1(Simplex::FE_P<dim>(1));
+  MappingFE<dim>             mapping1(FE_SimplexP<dim>(1));
   MappingQ<dim>              mapping2(1);
   hp::MappingCollection<dim> mappings(mapping1, mapping2);
 
   DoFHandler<dim> dof_handler(tria);
 
   for (const auto &cell : dof_handler.active_cell_iterators())
-    if (cell->reference_cell_type() == ReferenceCell::Type::Tri ||
-        cell->reference_cell_type() == ReferenceCell::Type::Tet)
+    if (cell->reference_cell() == ReferenceCells::Triangle ||
+        cell->reference_cell() == ReferenceCells::Tetrahedron)
       cell->set_active_fe_index(0);
     else
       cell->set_active_fe_index(1);

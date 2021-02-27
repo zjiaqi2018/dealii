@@ -25,6 +25,7 @@
 #include <deal.II/base/point.h>
 #include <deal.II/base/table.h>
 
+#include <deal.II/grid/reference_cell.h>
 #include <deal.II/grid/tria.h>
 
 #include <array>
@@ -127,6 +128,17 @@ namespace GridGenerator
   void
   simplex(Triangulation<dim, dim> &      tria,
           const std::vector<Point<dim>> &vertices);
+
+  /*
+   * Create a (coarse) grid with a single cell of the shape of the provided
+   * reference cell. This is a generalization of the hyper_cube() and simplex()
+   * functions above.
+   */
+  template <int dim, int spacedim>
+  void
+  reference_cell(const ReferenceCell &         reference_cell,
+                 Triangulation<dim, spacedim> &tria);
+
 
   /**
    * Same as hyper_cube(), but with the difference that not only one cell is
@@ -767,6 +779,58 @@ namespace GridGenerator
   hyper_ball_balanced(Triangulation<dim> &tria,
                       const Point<dim> &  center = Point<dim>(),
                       const double        radius = 1.);
+
+  /**
+   * Generate a 2D mesh consisting of the unit square joined with a copy shifted
+   * by $s = (1,0)$. Depending on the flags passed either the right or the left
+   * square is rotated by $\pi/2$. This way one can generate a mesh in which one
+   * square possibly contains an edge that has the opposite tangential (and
+   * hence also opposite normal) orientation of the neighboring edge of the
+   * other square.
+   *
+   * This mesh is not overly useful from a practical point of view. For
+   * debugging purposes it can be used to check for orientation issues for
+   * vector- or tensor-valued finite elements.
+   *
+   * @note If <code>rotate_left_square==rotate_right_square</code> the mesh is consistently oriented.
+   *
+   * @param[out] tria The input triangulation.
+   * @param[in] rotate_left_square <code>true</code> if the left square is
+   * rotated by $\pi/2$.
+   * @param[in] rotate_right_square <code>true</code> if the right square is
+   * rotated by $\pi/2$.
+   */
+  void non_standard_orientation_mesh(Triangulation<2> &tria,
+                                     const bool        rotate_left_square,
+                                     const bool        rotate_right_square);
+
+  /**
+   * Generate a 3D mesh consisting of the unit cube joined with a copy shifted
+   * by $s = (1,0,0)$. Depending on the flags passed either the right or the
+   * left cube (when looking at the positively oriented (x,z)-plane) contains a
+   * face that is either not in standard orientation and/or is rotated by either
+   * $\pi/2$, $\pi$ or $3/2\pi$.
+   *
+   * This mesh is not overly useful from a practical point of view. For
+   * debugging purposes it can be used to check for orientation issues for
+   * vector- or tensor-valued finite elements.
+   *
+   * @param[out] tria The input triangulation.
+   * @param[in] face_orientation <code>true</code> if the face is the not in
+   * standard orientation.
+   * @param[in] face_flip <code>true</code> if the face is rotated by +180
+   * degrees
+   * @param[in] face_rotation <code>true</code> if the face is rotated
+   * (additionally) by +90 degrees
+   * @param[in] manipulate_left_cube <code>true</code> if the left cube is
+   * to be re-ordered. If `false`, it is the right cube.
+   */
+  void non_standard_orientation_mesh(Triangulation<3> &tria,
+                                     const bool        face_orientation,
+                                     const bool        face_flip,
+                                     const bool        face_rotation,
+                                     const bool        manipulate_left_cube);
+
 
   /**
    * Creates a hyper sphere, i.e., a surface of a ball in @p spacedim
@@ -1522,6 +1586,7 @@ namespace GridGenerator
    * Given the two triangulations specified as the first two arguments, create
    * the triangulation that contains the cells of both triangulation and store
    * it in the third parameter. Previous content of @p result will be deleted.
+   * One of the two input triangulations can also be the @p result triangulation.
    *
    * This function is most often used to compose meshes for more complicated
    * geometries if the geometry can be composed of simpler parts for which
@@ -1927,6 +1992,15 @@ namespace GridGenerator
    *
    * @param in_tria The triangulation containing hex elements.
    * @param out_tria The converted triangulation containing tet elements.
+   *
+   * @note No manifold objects are copied by this function: you must
+   *   copy existing manifold objects from @p in_tria to @p out_tria, e.g.,
+   *   with the following code:
+   * @code
+   * for (const auto i : in_tria.get_manifold_ids())
+   *   if (i != numbers::flat_manifold_id)
+   *     out_tria.set_manifold(i, in_tria.get_manifold(i));
+   * @endcode
    */
   template <int dim, int spacedim>
   void
@@ -2072,8 +2146,6 @@ namespace GridGenerator
       add_parameters(ParameterHandler &prm);
     };
 
-
-
     /**
      * Initialize the given triangulation with a flow field around an airfoil,
      * i.e., a mesh of C-Type approximating Joukowski or NACA (4 digit)
@@ -2132,6 +2204,50 @@ namespace GridGenerator
       const AdditionalData &additional_data = AdditionalData());
 
   } // namespace Airfoil
+
+  /**
+   * Create a coordinate-parallel brick from the two diagonally opposite
+   * corner points @p p1 and @p p2. The number of vertices in coordinate
+   * direction @p i is given by <tt>repetitions[i]+1</tt>.
+   *
+   * @note This function connects internally 4/8 vertices to
+   *   quadrilateral/hexahedral cells and subdivides these into 2/5
+   * triangular/tetrahedral cells.
+   *
+   * @note Currently, this function only works for `dim==spacedim`.
+   *
+   * @ingroup simplex
+   */
+  template <int dim, int spacedim>
+  void
+  subdivided_hyper_rectangle_with_simplices(
+    Triangulation<dim, spacedim> &   tria,
+    const std::vector<unsigned int> &repetitions,
+    const Point<dim> &               p1,
+    const Point<dim> &               p2,
+    const bool                       colorize = false);
+
+  /**
+   * Initialize the given triangulation with a hypercube (square in 2D and
+   * cube in 3D) consisting of @p repetitions cells in each direction.
+   * The hypercube volume is the tensor product interval
+   * $[left,right]^{\text{dim}}$ in the present number of dimensions, where
+   * the limits are given as arguments. They default to zero and unity, then
+   * producing the unit hypercube.
+   *
+   * @note This function connects internally 4/8 vertices to
+   * quadrilateral/hexahedral cells and subdivides these into 2/5
+   * triangular/tetrahedral cells.
+   *
+   * @ingroup simplex
+   */
+  template <int dim, int spacedim>
+  void
+  subdivided_hyper_cube_with_simplices(Triangulation<dim, spacedim> &tria,
+                                       const unsigned int repetitions,
+                                       const double       p1       = 0.0,
+                                       const double       p2       = 1.0,
+                                       const bool         colorize = false);
 
   ///@}
 

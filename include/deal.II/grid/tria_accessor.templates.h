@@ -54,74 +54,68 @@ namespace internal
                                            GeometryInfo<dim>::vertices_per_cell>
         vertices)
     {
-      switch (ReferenceCell::n_vertices_to_type(dim, vertices.size()))
-        {
-          case ReferenceCell::Type::Line:
-            // Return the distance between the two vertices
-            return (vertices[1] - vertices[0]).norm();
+      const dealii::ReferenceCell reference_cell =
+        dealii::ReferenceCell::n_vertices_to_type(dim, vertices.size());
 
-          case ReferenceCell::Type::Tri:
-            // Return the longest of the three edges
-            return std::max({(vertices[1] - vertices[0]).norm(),
-                             (vertices[2] - vertices[1]).norm(),
-                             (vertices[2] - vertices[0]).norm()});
+      if (reference_cell == dealii::ReferenceCells::Line)
+        // Return the distance between the two vertices
+        return (vertices[1] - vertices[0]).norm();
+      else if (reference_cell == dealii::ReferenceCells::Triangle)
+        // Return the longest of the three edges
+        return std::max({(vertices[1] - vertices[0]).norm(),
+                         (vertices[2] - vertices[1]).norm(),
+                         (vertices[2] - vertices[0]).norm()});
+      else if (reference_cell == dealii::ReferenceCells::Quadrilateral)
+        // Return the longer one of the two diagonals of the quadrilateral
+        return std::max({(vertices[3] - vertices[0]).norm(),
+                         (vertices[2] - vertices[1]).norm()});
+      else if (reference_cell == dealii::ReferenceCells::Tetrahedron)
+        // Return the longest of the six edges of the tetrahedron
+        return std::max({(vertices[1] - vertices[0]).norm(),
+                         (vertices[2] - vertices[0]).norm(),
+                         (vertices[2] - vertices[1]).norm(),
+                         (vertices[3] - vertices[0]).norm(),
+                         (vertices[3] - vertices[1]).norm(),
+                         (vertices[3] - vertices[2]).norm()});
+      else if (reference_cell == dealii::ReferenceCells::Pyramid)
+        // Return ...
+        return std::max({// the longest diagonal of the quadrilateral base
+                         // of the pyramid or ...
+                         (vertices[3] - vertices[0]).norm(),
+                         (vertices[2] - vertices[1]).norm(),
+                         // the longest edge connected with the apex of the
+                         // pyramid
+                         (vertices[4] - vertices[0]).norm(),
+                         (vertices[4] - vertices[1]).norm(),
+                         (vertices[4] - vertices[2]).norm(),
+                         (vertices[4] - vertices[3]).norm()});
+      else if (reference_cell == dealii::ReferenceCells::Wedge)
+        // Return ...
+        return std::max({// the longest of the 2*3=6 diagonals of the three
+                         // quadrilateral sides of the wedge or ...
+                         (vertices[4] - vertices[0]).norm(),
+                         (vertices[3] - vertices[1]).norm(),
+                         (vertices[5] - vertices[1]).norm(),
+                         (vertices[4] - vertices[2]).norm(),
+                         (vertices[5] - vertices[0]).norm(),
+                         (vertices[3] - vertices[2]).norm(),
+                         // the longest of the 3*2=6 edges of the two
+                         // triangular faces of the wedge
+                         (vertices[1] - vertices[0]).norm(),
+                         (vertices[2] - vertices[1]).norm(),
+                         (vertices[2] - vertices[0]).norm(),
+                         (vertices[4] - vertices[3]).norm(),
+                         (vertices[5] - vertices[4]).norm(),
+                         (vertices[5] - vertices[3]).norm()});
+      else if (reference_cell == dealii::ReferenceCells::Hexahedron)
+        // Return the longest of the four diagonals of the hexahedron
+        return std::max({(vertices[7] - vertices[0]).norm(),
+                         (vertices[6] - vertices[1]).norm(),
+                         (vertices[2] - vertices[5]).norm(),
+                         (vertices[3] - vertices[4]).norm()});
 
-          case ReferenceCell::Type::Quad:
-            // Return the longer one of the two diagonals of the quadrilateral
-            return std::max({(vertices[3] - vertices[0]).norm(),
-                             (vertices[2] - vertices[1]).norm()});
-
-          case ReferenceCell::Type::Tet:
-            // Return the longest of the six edges of the tetrahedron
-            return std::max({(vertices[1] - vertices[0]).norm(),
-                             (vertices[2] - vertices[0]).norm(),
-                             (vertices[2] - vertices[1]).norm(),
-                             (vertices[3] - vertices[0]).norm(),
-                             (vertices[3] - vertices[1]).norm(),
-                             (vertices[3] - vertices[2]).norm()});
-
-          case ReferenceCell::Type::Pyramid:
-            // Return ...
-            return std::max({// the longest diagonal of the quadrilateral base
-                             // of the pyramid or ...
-                             (vertices[3] - vertices[0]).norm(),
-                             (vertices[2] - vertices[1]).norm(),
-                             // the longest edge connected with the apex of the
-                             // pyramid
-                             (vertices[4] - vertices[0]).norm(),
-                             (vertices[4] - vertices[1]).norm(),
-                             (vertices[4] - vertices[2]).norm(),
-                             (vertices[4] - vertices[3]).norm()});
-
-          case ReferenceCell::Type::Wedge:
-            // Return ...
-            return std::max({// the longest of the 2*3=6 diagonals of the three
-                             // quadrilateral sides of the wedge or ...
-                             (vertices[4] - vertices[0]).norm(),
-                             (vertices[3] - vertices[1]).norm(),
-                             (vertices[5] - vertices[1]).norm(),
-                             (vertices[4] - vertices[2]).norm(),
-                             (vertices[5] - vertices[0]).norm(),
-                             (vertices[3] - vertices[2]).norm(),
-                             // the longest of the 3*2=6 edges of the two
-                             // triangular faces of the wedge
-                             (vertices[1] - vertices[0]).norm(),
-                             (vertices[2] - vertices[1]).norm(),
-                             (vertices[2] - vertices[0]).norm(),
-                             (vertices[4] - vertices[3]).norm(),
-                             (vertices[5] - vertices[4]).norm(),
-                             (vertices[5] - vertices[3]).norm()});
-
-          case ReferenceCell::Type::Hex:
-            // Return the longest of the four diagonals of the hexahedron
-            return std::max({(vertices[7] - vertices[0]).norm(),
-                             (vertices[6] - vertices[1]).norm(),
-                             (vertices[2] - vertices[5]).norm(),
-                             (vertices[3] - vertices[4]).norm()});
-          default:
-            Assert(false, ExcNotImplemented());
-            return -1e10;
-        }
+      Assert(false, ExcNotImplemented());
+      return -1e10;
     }
   } // namespace TriaAccessorImplementation
 } // namespace internal
@@ -627,11 +621,10 @@ namespace internal
       line_index(const TriaAccessor<3, 3, 3> &accessor, const unsigned int i)
       {
         const auto pair =
-          accessor.reference_cell_info().standard_line_to_face_and_line_index(
-            i);
+          accessor.reference_cell().standard_line_to_face_and_line_index(i);
         const auto quad_index = pair[0];
         const auto line_index =
-          accessor.reference_cell_info().standard_to_real_face_line(
+          accessor.reference_cell().standard_to_real_face_line(
             pair[1], pair[0], face_orientation_raw(accessor, quad_index));
 
         return accessor.quad(quad_index)->line_index(line_index);
@@ -695,7 +688,7 @@ namespace internal
       face_orientation(const TriaAccessor<3, 3, 3> &accessor,
                        const unsigned int           face)
       {
-        return ReferenceCell::internal::get_bit(
+        return Utilities::get_bit(
           accessor.tria->levels[accessor.present_level]->face_orientations
             [accessor.present_index * GeometryInfo<3>::faces_per_cell + face],
           0 /*=orientation_bit*/);
@@ -745,7 +738,7 @@ namespace internal
                    ->face_orientations.size(),
                ExcInternalError());
 
-        return ReferenceCell::internal::get_bit(
+        return Utilities::get_bit(
           accessor.tria->levels[accessor.present_level]->face_orientations
             [accessor.present_index * GeometryInfo<3>::faces_per_cell + face],
           2 /*=flip_bit*/);
@@ -781,7 +774,7 @@ namespace internal
                    ->face_orientations.size(),
                ExcInternalError());
 
-        return ReferenceCell::internal::get_bit(
+        return Utilities::get_bit(
           accessor.tria->levels[accessor.present_level]->face_orientations
             [accessor.present_index * GeometryInfo<3>::faces_per_cell + face],
           1 /*=rotation_bit*/);
@@ -840,14 +833,13 @@ namespace internal
         AssertIndexRange(line, accessor.n_lines());
 
         const auto pair =
-          accessor.reference_cell_info().standard_line_to_face_and_line_index(
-            line);
+          accessor.reference_cell().standard_line_to_face_and_line_index(line);
         const auto quad_index = pair[0];
         const auto line_index =
-          accessor.reference_cell_info().standard_to_real_face_line(
+          accessor.reference_cell().standard_to_real_face_line(
             pair[1], pair[0], face_orientation_raw(accessor, quad_index));
 
-        return accessor.reference_cell_info().combine_face_and_line_orientation(
+        return accessor.reference_cell().combine_face_and_line_orientation(
           pair[1],
           face_orientation_raw(accessor, quad_index),
           accessor.quad(quad_index)->line_orientation(line_index));
@@ -879,7 +871,7 @@ namespace internal
                  accessor.tria->levels[accessor.present_level]
                    ->face_orientations.size(),
                ExcInternalError());
-        ReferenceCell::internal::set_bit(
+        Utilities::set_bit(
           accessor.tria->levels[accessor.present_level]->face_orientations
             [accessor.present_index * GeometryInfo<3>::faces_per_cell + face],
           0 /*=orientation_bit*/,
@@ -912,7 +904,7 @@ namespace internal
                    ->face_orientations.size(),
                ExcInternalError());
 
-        ReferenceCell::internal::set_bit(
+        Utilities::set_bit(
           accessor.tria->levels[accessor.present_level]->face_orientations
             [accessor.present_index * GeometryInfo<3>::faces_per_cell + face],
           2 /*=flip_bit*/,
@@ -945,7 +937,7 @@ namespace internal
                    ->face_orientations.size(),
                ExcInternalError());
 
-        ReferenceCell::internal::set_bit(
+        Utilities::set_bit(
           accessor.tria->levels[accessor.present_level]->face_orientations
             [accessor.present_index * GeometryInfo<3>::faces_per_cell + face],
           1 /*=rotation_bit*/,
@@ -1025,11 +1017,12 @@ namespace internal
       vertex_index(const TriaAccessor<2, dim, spacedim> &accessor,
                    const unsigned int                    corner)
       {
-        const auto pair = accessor.reference_cell_info()
-                            .standard_vertex_to_face_and_vertex_index(corner);
+        const auto pair =
+          accessor.reference_cell().standard_vertex_to_face_and_vertex_index(
+            corner);
         const auto line_index = pair[0];
         const auto vertex_index =
-          accessor.reference_cell_info().standard_to_real_face_vertex(
+          accessor.reference_cell().standard_to_real_face_vertex(
             pair[1], pair[0], accessor.line_orientation(line_index));
 
         return accessor.line(line_index)->vertex_index(vertex_index);
@@ -1041,11 +1034,12 @@ namespace internal
       vertex_index(const TriaAccessor<3, 3, 3> &accessor,
                    const unsigned int           corner)
       {
-        const auto pair = accessor.reference_cell_info()
-                            .standard_vertex_to_face_and_vertex_index(corner);
+        const auto pair =
+          accessor.reference_cell().standard_vertex_to_face_and_vertex_index(
+            corner);
         const auto face_index = pair[0];
         const auto vertex_index =
-          accessor.reference_cell_info().standard_to_real_face_vertex(
+          accessor.reference_cell().standard_to_real_face_vertex(
             pair[1], pair[0], face_orientation_raw(accessor, face_index));
 
         return accessor.quad(face_index)->vertex_index(vertex_index);
@@ -1092,18 +1086,18 @@ TriaAccessor<structdim, dim, spacedim>::vertex_iterator(
 
 
 template <int structdim, int dim, int spacedim>
-inline ReferenceCell::Type
-TriaAccessor<structdim, dim, spacedim>::reference_cell_type() const
+inline ReferenceCell
+TriaAccessor<structdim, dim, spacedim>::reference_cell() const
 {
   if (structdim == 0)
-    return ReferenceCell::Type::Vertex;
+    return ReferenceCells::Vertex;
   else if (structdim == 1)
-    return ReferenceCell::Type::Line;
+    return ReferenceCells::Line;
   else if (structdim == dim)
     return this->tria->levels[this->present_level]
-      ->reference_cell_type[this->present_index];
+      ->reference_cell[this->present_index];
   else
-    return this->tria->faces->quad_reference_cell_type[this->present_index];
+    return this->tria->faces->quad_reference_cell[this->present_index];
 }
 
 
@@ -1959,8 +1953,8 @@ TriaAccessor<structdim, dim, spacedim>::set_all_manifold_ids(
         break;
 
       case 2:
-        // for quads also set manifold_id of bounding lines
-        for (unsigned int i = 0; i < 4; ++i)
+        // for quads/simplices also set manifold_id of bounding lines
+        for (unsigned int i = 0; i < this->n_lines(); ++i)
           this->line(i)->set_manifold_id(manifold_ind);
         break;
       default:
@@ -2201,7 +2195,7 @@ template <int structdim, int dim, int spacedim>
 unsigned int
 TriaAccessor<structdim, dim, spacedim>::n_vertices() const
 {
-  return this->reference_cell_info().n_vertices();
+  return this->reference_cell().n_vertices();
 }
 
 
@@ -2210,7 +2204,7 @@ template <int structdim, int dim, int spacedim>
 unsigned int
 TriaAccessor<structdim, dim, spacedim>::n_lines() const
 {
-  return this->reference_cell_info().n_lines();
+  return this->reference_cell().n_lines();
 }
 
 
@@ -2221,7 +2215,7 @@ TriaAccessor<structdim, dim, spacedim>::n_faces() const
 {
   AssertDimension(structdim, dim);
 
-  return this->reference_cell_info().n_faces();
+  return this->reference_cell().n_faces();
 }
 
 
@@ -2251,19 +2245,6 @@ TriaAccessor<structdim, dim, spacedim>::face_indices() const
   return {0U, n_faces()};
 }
 
-
-
-template <int structdim, int dim, int spacedim>
-inline const ReferenceCell::internal::Info::Base &
-TriaAccessor<structdim, dim, spacedim>::reference_cell_info() const
-{
-  if (structdim == 0)
-    return ReferenceCell::internal::Info::get_cell(ReferenceCell::Type::Vertex);
-  else if (structdim == 1)
-    return ReferenceCell::internal::Info::get_cell(ReferenceCell::Type::Line);
-  else
-    return ReferenceCell::internal::Info::get_cell(this->reference_cell_type());
-}
 
 
 /*----------------- Functions: TriaAccessor<0,dim,spacedim> -----------------*/
@@ -2857,8 +2838,7 @@ inline typename dealii::internal::TriangulationImplementation::
   Iterators<1, spacedim>::line_iterator
   TriaAccessor<0, 1, spacedim>::line(const unsigned int)
 {
-  return typename dealii::internal::TriangulationImplementation::
-    Iterators<1, spacedim>::line_iterator();
+  return {};
 }
 
 
@@ -2876,8 +2856,7 @@ inline typename dealii::internal::TriangulationImplementation::
   Iterators<1, spacedim>::quad_iterator
   TriaAccessor<0, 1, spacedim>::quad(const unsigned int)
 {
-  return typename dealii::internal::TriangulationImplementation::
-    Iterators<1, spacedim>::quad_iterator();
+  return {};
 }
 
 
@@ -3116,10 +3095,10 @@ TriaAccessor<0, 1, spacedim>::used() const
 
 
 template <int spacedim>
-inline ReferenceCell::Type
-TriaAccessor<0, 1, spacedim>::reference_cell_type() const
+inline ReferenceCell
+TriaAccessor<0, 1, spacedim>::reference_cell() const
 {
-  return ReferenceCell::Type::Vertex;
+  return ReferenceCells::Vertex;
 }
 
 

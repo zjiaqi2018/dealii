@@ -16,6 +16,7 @@
 
 #include <deal.II/base/exceptions.h>
 #include <deal.II/base/path_search.h>
+#include <deal.II/base/patterns.h>
 #include <deal.II/base/utilities.h>
 
 #include <deal.II/grid/grid_in.h>
@@ -28,6 +29,10 @@
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/xml_parser.hpp>
 #include <boost/serialization/serialization.hpp>
+
+#ifdef DEAL_II_GMSH_WITH_API
+#  include <gmsh.h>
+#endif
 
 #include <algorithm>
 #include <cctype>
@@ -2178,6 +2183,219 @@ GridIn<dim, spacedim>::read_msh(std::istream &in)
 
 
 
+#ifdef DEAL_II_GMSH_WITH_API
+template <int dim, int spacedim>
+void
+GridIn<dim, spacedim>::read_msh(const std::string &fname)
+{
+  Assert(tria != nullptr, ExcNoTriangulationSelected());
+  // gmsh -> deal.II types
+  const std::map<int, std::uint8_t> gmsh_to_dealii_type = {
+    {{15, 0}, {1, 1}, {2, 2}, {3, 3}, {4, 4}, {7, 5}, {6, 6}, {5, 7}}};
+
+  // Vertex renumbering, by dealii type
+  const std::array<std::vector<unsigned int>, 8> gmsh_to_dealii = {
+    {{0},
+     {{0, 1}},
+     {{0, 1, 2}},
+     {{0, 1, 3, 2}},
+     {{0, 1, 2, 3}},
+     {{0, 1, 3, 2, 4}},
+     {{0, 1, 2, 3, 4, 5}},
+     {{0, 1, 3, 2, 4, 5, 7, 6}}}};
+
+  std::vector<Point<spacedim>>               vertices;
+  std::vector<CellData<dim>>                 cells;
+  SubCellData                                subcelldata;
+  std::map<unsigned int, types::boundary_id> boundary_ids_1d;
+
+  gmsh::initialize();
+  gmsh::option::setNumber("General.Verbosity", 0);
+  gmsh::open(fname);
+
+  AssertThrow(gmsh::model::getDimension() == dim,
+              ExcMessage("You are trying to read a gmsh file with dimension " +
+                         std::to_string(gmsh::model::getDimension()) +
+                         " into a grid of dimension " + std::to_string(dim)));
+
+  // Read all nodes, and store them in our vector of vertices. Before we do
+  // that, make sure all tags are consecutive
+  {
+    gmsh::model::mesh::removeDuplicateNodes();
+    gmsh::model::mesh::renumberNodes();
+    std::vector<std::size_t> node_tags;
+    std::vector<double>      coord;
+    std::vector<double>      parametricCoord;
+    gmsh::model::mesh::getNodes(
+      node_tags, coord, parametricCoord, -1, -1, false, false);
+    vertices.resize(node_tags.size());
+    for (unsigned int i = 0; i < node_tags.size(); ++i)
+      {
+        // Check that renumbering worked!
+        AssertDimension(node_tags[i], i + 1);
+        for (unsigned int d = 0; d < spacedim; ++d)
+          vertices[i][d] = coord[i * 3 + d];
+#  ifdef DEBUG
+        // Make sure the embedded dimension is right
+        for (unsigned int d = spacedim; d < 3; ++d)
+          Assert(coord[i * 3 + d] == 0,
+                 ExcMessage("The grid you are reading contains nodes that are "
+                            "nonzero in the coordinate with index " +
+                            std::to_string(d) +
+                            ", but you are trying to save "
+                            "it on a grid embedded in a " +
+                            std::to_string(spacedim) + " dimensional space."));
+#  endif
+      }
+  }
+
+  // Get all the elementary entities in the model, as a vector of (dimension,
+  // tag) pairs:
+  std::vector<std::pair<int, int>> entities;
+  gmsh::model::getEntities(entities);
+
+  for (const auto &e : entities)
+    {
+      // Dimension and tag of the entity:
+      const int &entity_dim = e.first;
+      const int &entity_tag = e.second;
+
+      types::manifold_id manifold_id = numbers::flat_manifold_id;
+      types::boundary_id boundary_id = 0;
+
+      // Get the physical tags, to deduce boundary, material, and manifold_id
+      std::vector<int> physical_tags;
+      gmsh::model::getPhysicalGroupsForEntity(entity_dim,
+                                              entity_tag,
+                                              physical_tags);
+
+      // Now fill manifold id and boundary or material id
+      if (physical_tags.size())
+        for (auto physical_tag : physical_tags)
+          {
+            std::string name;
+            gmsh::model::getPhysicalName(entity_dim, physical_tag, name);
+            if (!name.empty())
+              try
+                {
+                  std::map<std::string, int> id_names;
+                  Patterns::Tools::to_value(name, id_names);
+                  bool throw_anyway      = false;
+                  bool found_boundary_id = false;
+                  // If the above did not throw, we keep going, and retrieve
+                  // all the information that we know how to translate.
+                  for (const auto &it : id_names)
+                    {
+                      const auto &name = it.first;
+                      const auto &id   = it.second;
+                      if (entity_dim == dim && name == "MaterialID")
+                        {
+                          boundary_id = static_cast<types::boundary_id>(id);
+                          found_boundary_id = true;
+                        }
+                      else if (entity_dim < dim && name == "BoundaryID")
+                        {
+                          boundary_id = static_cast<types::boundary_id>(id);
+                          found_boundary_id = true;
+                        }
+                      else if (name == "ManifoldID")
+                        manifold_id = static_cast<types::manifold_id>(id);
+                      else
+                        // We did not recognize one of the keys. We'll fall
+                        // back to setting the boundary id to the physical tag
+                        // after reading all strings.
+                        throw_anyway = true;
+                    }
+                  // If we didn't find a BoundaryID:XX or MaterialID:XX, and
+                  // something was found but not recognized, then we set the
+                  // material id or boundary id in the catch block below, using
+                  // directly the physical tag
+                  if (throw_anyway && !found_boundary_id)
+                    throw;
+                }
+              catch (...)
+                {
+                  // When the above didn't work, we revert to the old
+                  // behaviour: the physical tag itself is interpreted either
+                  // as a material_id or a boundary_id, and no manifold id is
+                  // known
+                  boundary_id = physical_tag;
+                }
+          }
+
+      // Get the mesh elements for the entity (dim, tag):
+      std::vector<int>                      element_types;
+      std::vector<std::vector<std::size_t>> element_ids, element_nodes;
+      gmsh::model::mesh::getElements(
+        element_types, element_ids, element_nodes, entity_dim, entity_tag);
+
+      for (unsigned int i = 0; i < element_types.size(); ++i)
+        {
+          const auto &type       = gmsh_to_dealii_type.at(element_types[i]);
+          const auto  n_vertices = gmsh_to_dealii[type].size();
+          const auto &elements   = element_ids[i];
+          const auto &nodes      = element_nodes[i];
+          for (unsigned int j = 0; j < elements.size(); ++j)
+            {
+              if (entity_dim == dim)
+                {
+                  cells.emplace_back(n_vertices);
+                  auto &cell = cells.back();
+                  for (unsigned int v = 0; v < n_vertices; ++v)
+                    cell.vertices[v] =
+                      nodes[n_vertices * j + gmsh_to_dealii[type][v]] - 1;
+                  cell.manifold_id = manifold_id;
+                  cell.material_id = boundary_id;
+                }
+              else if (entity_dim == 2)
+                {
+                  subcelldata.boundary_quads.emplace_back(n_vertices);
+                  auto &face = subcelldata.boundary_quads.back();
+                  for (unsigned int v = 0; v < n_vertices; ++v)
+                    face.vertices[v] =
+                      nodes[n_vertices * j + gmsh_to_dealii[type][v]] - 1;
+
+                  face.manifold_id = manifold_id;
+                  face.boundary_id = boundary_id;
+                }
+              else if (entity_dim == 1)
+                {
+                  subcelldata.boundary_lines.emplace_back(n_vertices);
+                  auto &line = subcelldata.boundary_lines.back();
+                  for (unsigned int v = 0; v < n_vertices; ++v)
+                    line.vertices[v] =
+                      nodes[n_vertices * j + gmsh_to_dealii[type][v]] - 1;
+
+                  line.manifold_id = manifold_id;
+                  line.boundary_id = boundary_id;
+                }
+              else if (entity_dim == 0)
+                {
+                  // This should only happen in one dimension.
+                  AssertDimension(dim, 1);
+                  for (unsigned int j = 0; j < elements.size(); ++j)
+                    boundary_ids_1d[nodes[j] - 1] = boundary_id;
+                }
+            }
+        }
+    }
+
+  Assert(subcelldata.check_consistency(dim), ExcInternalError());
+
+  tria->create_triangulation(vertices, cells, subcelldata);
+
+  // in 1d, we also have to attach boundary ids to vertices, which does not
+  // currently work through the call above
+  if (dim == 1)
+    assign_1d_boundary_ids(boundary_ids_1d, *tria);
+
+  gmsh::clear();
+  gmsh::finalize();
+}
+#endif
+
+
+
 template <int dim, int spacedim>
 void
 GridIn<dim, spacedim>::parse_tecplot_header(
@@ -2824,7 +3042,7 @@ namespace
 {
   // Convert ExodusII strings to cell types. Use the number of nodes per element
   // to disambiguate some cases.
-  ReferenceCell::Type
+  ReferenceCell
   exodusii_name_to_type(const std::string &type_name,
                         const int          n_nodes_per_element)
   {
@@ -2845,28 +3063,28 @@ namespace
                       type_name_2.end());
 
     if (type_name_2 == "TRI" || type_name_2 == "TRIANGLE")
-      return ReferenceCell::Type::Tri;
+      return ReferenceCells::Triangle;
     else if (type_name_2 == "QUAD" || type_name_2 == "QUADRILATERAL")
-      return ReferenceCell::Type::Quad;
+      return ReferenceCells::Quadrilateral;
     else if (type_name_2 == "SHELL")
       {
         if (n_nodes_per_element == 3)
-          return ReferenceCell::Type::Tri;
+          return ReferenceCells::Triangle;
         else
-          return ReferenceCell::Type::Quad;
+          return ReferenceCells::Quadrilateral;
       }
     else if (type_name_2 == "TET" || type_name_2 == "TETRA" ||
              type_name_2 == "TETRAHEDRON")
-      return ReferenceCell::Type::Tet;
+      return ReferenceCells::Tetrahedron;
     else if (type_name_2 == "PYRA" || type_name_2 == "PYRAMID")
-      return ReferenceCell::Type::Pyramid;
+      return ReferenceCells::Pyramid;
     else if (type_name_2 == "WEDGE")
-      return ReferenceCell::Type::Wedge;
+      return ReferenceCells::Wedge;
     else if (type_name_2 == "HEX" || type_name_2 == "HEXAHEDRON")
-      return ReferenceCell::Type::Hex;
+      return ReferenceCells::Hexahedron;
 
     Assert(false, ExcNotImplemented());
-    return ReferenceCell::Type::Invalid;
+    return ReferenceCells::Invalid;
   }
 
   // Associate deal.II boundary ids with sidesets (a face can be in multiple
@@ -2974,43 +3192,43 @@ namespace
             // Record the b_or_m_id of the current face.
             const unsigned int   local_face_n = face_id % max_faces_per_cell;
             const CellData<dim> &cell = cells[face_id / max_faces_per_cell];
-            const ReferenceCell::Type cell_type =
+            const ReferenceCell  cell_type =
               ReferenceCell::n_vertices_to_type(dim, cell.vertices.size());
-            const ReferenceCell::internal::Info::Base &info =
-              ReferenceCell::internal::Info::get_cell(cell_type);
             const unsigned int deal_face_n =
-              info.exodusii_face_to_deal_face(local_face_n);
-            const ReferenceCell::internal::Info::Base &face_info =
-              ReferenceCell::internal::Info::get_face(cell_type, deal_face_n);
+              cell_type.exodusii_face_to_deal_face(local_face_n);
+            const ReferenceCell face_reference_cell =
+              cell_type.face_reference_cell(deal_face_n);
 
             // The orientation we pick doesn't matter here since when we create
             // the Triangulation we will sort the vertices for each CellData
             // object created here.
             if (dim == 2)
               {
-                CellData<1> boundary_line(face_info.n_vertices());
+                CellData<1> boundary_line(face_reference_cell.n_vertices());
                 if (apply_all_indicators_to_manifolds)
                   boundary_line.manifold_id = current_b_or_m_id;
                 else
                   boundary_line.boundary_id = current_b_or_m_id;
-                for (unsigned int j = 0; j < face_info.n_vertices(); ++j)
+                for (unsigned int j = 0; j < face_reference_cell.n_vertices();
+                     ++j)
                   boundary_line.vertices[j] =
-                    cell
-                      .vertices[info.face_to_cell_vertices(deal_face_n, j, 0)];
+                    cell.vertices[cell_type.face_to_cell_vertices(
+                      deal_face_n, j, 0)];
 
                 subcelldata.boundary_lines.push_back(std::move(boundary_line));
               }
             else if (dim == 3)
               {
-                CellData<2> boundary_quad(face_info.n_vertices());
+                CellData<2> boundary_quad(face_reference_cell.n_vertices());
                 if (apply_all_indicators_to_manifolds)
                   boundary_quad.manifold_id = current_b_or_m_id;
                 else
                   boundary_quad.boundary_id = current_b_or_m_id;
-                for (unsigned int j = 0; j < face_info.n_vertices(); ++j)
+                for (unsigned int j = 0; j < face_reference_cell.n_vertices();
+                     ++j)
                   boundary_quad.vertices[j] =
-                    cell
-                      .vertices[info.face_to_cell_vertices(deal_face_n, j, 0)];
+                    cell.vertices[cell_type.face_to_cell_vertices(
+                      deal_face_n, j, 0)];
 
                 subcelldata.boundary_quads.push_back(std::move(boundary_quad));
               }
@@ -3126,14 +3344,13 @@ GridIn<dim, spacedim>::read_exodusii(
                           &n_faces_per_element,
                           &n_attributes_per_element);
       AssertThrowExodusII(ierr);
-      const ReferenceCell::Type type =
+      const ReferenceCell type =
         exodusii_name_to_type(string_temp.data(), n_nodes_per_element);
-      const ReferenceCell::internal::Info::Base &info =
-        ReferenceCell::internal::Info::get_cell(type);
+
       // The number of nodes per element may be larger than what we want to
       // read - for example, if the Exodus file contains a QUAD9 element, we
       // only want to read the first four values and ignore the rest.
-      Assert(int(info.n_vertices()) <= n_nodes_per_element, ExcInternalError());
+      Assert(int(type.n_vertices()) <= n_nodes_per_element, ExcInternalError());
 
       std::vector<int> connection(n_nodes_per_element * n_block_elements);
       ierr = ex_get_conn(ex_id,
@@ -3147,10 +3364,10 @@ GridIn<dim, spacedim>::read_exodusii(
       for (unsigned int elem_n = 0; elem_n < connection.size();
            elem_n += n_nodes_per_element)
         {
-          CellData<dim> cell(info.n_vertices());
-          for (unsigned int i : info.vertex_indices())
+          CellData<dim> cell(type.n_vertices());
+          for (unsigned int i : type.vertex_indices())
             {
-              cell.vertices[info.exodusii_vertex_to_deal_vertex(i)] =
+              cell.vertices[type.exodusii_vertex_to_deal_vertex(i)] =
                 connection[elem_n + i] - 1;
             }
           cell.material_id = element_block_id;

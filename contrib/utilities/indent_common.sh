@@ -171,7 +171,11 @@ remove_trailing_whitespace()
   file="${1}"
   tmpfile="$(mktemp "${TMPDIR}/$(basename "$1").tmp.XXXXXXXX")"
 
-  sed 's/\s\+$//g' "${file}" > "${tmpfile}"
+  #
+  # Mac OS uses BSD sed (other than GNU sed in Linux),
+  # so it doesn't recognize \s as 'spaces' or + as 'one or more'.
+  #
+  sed 's/[[:space:]]\{1,\}$//g' "${file}" > "${tmpfile}"
   if ! diff -q "${file}" "${tmpfile}" >/dev/null; then
     mv "${tmpfile}" "${file}"
   fi
@@ -317,3 +321,30 @@ process_changed()
       grep -E "^${2}$" |
       ${XARGS} '\n' -n 1 -P 10 -I {} bash -c "${3} {}"
 }
+
+#
+# Ensure only a single newline at end of files
+#
+ensure_single_trailing_newline()
+{
+  f=$1
+
+  # Remove newlines at end of file
+  # Check that the current line only contains newlines
+  # If it doesn't match, print it
+  # If it does match and we're not at the end of the file,
+  # append the next line to the current line and repeat the check
+  # If it does match and we're at the end of the file,
+  # remove the line.
+  sed -e :a -e '/^\n*$/{$d;N;};/\n$/ba' $f >$f.tmpi
+
+  # Then add a newline to the end of the file
+  # '$' denotes the end of file
+  # 'a\' appends the following text (which in this case is nothing)
+  # on a new line
+  sed -e '$a\' $f.tmpi >$f.tmp
+
+  diff -q $f $f.tmp >/dev/null || mv $f.tmp $f
+  rm -f $f.tmp $f.tmpi
+}
+export -f ensure_single_trailing_newline

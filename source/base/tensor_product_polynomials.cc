@@ -19,7 +19,9 @@
 #include <deal.II/base/table.h>
 #include <deal.II/base/tensor_product_polynomials.h>
 
+DEAL_II_DISABLE_EXTRA_DIAGNOSTICS
 #include <boost/container/small_vector.hpp>
+DEAL_II_ENABLE_EXTRA_DIAGNOSTICS
 
 #include <array>
 #include <memory>
@@ -209,7 +211,7 @@ TensorProductPolynomials<dim, PolynomialType>::compute_grad(
   // uni-directional derivatives at
   // the given point in each
   // co-ordinate direction
-  std::array<std::array<double, 2>, dim> v;
+  ndarray<double, dim, 2> v;
   {
     std::vector<double> tmp(2);
     for (unsigned int d = 0; d < dim; ++d)
@@ -256,7 +258,7 @@ TensorProductPolynomials<dim, PolynomialType>::compute_grad_grad(
   std::array<unsigned int, dim> indices;
   compute_index(i, indices);
 
-  std::array<std::array<double, 3>, dim> v;
+  ndarray<double, dim, 3> v;
   {
     std::vector<double> tmp(3);
     for (unsigned int d = 0; d < dim; ++d)
@@ -351,8 +353,8 @@ TensorProductPolynomials<dim, PolynomialType>::evaluate(
   // coordinate direction. Once we have those values, we perform the
   // multiplications for the tensor product in the arbitrary dimension.
   const unsigned int n_polynomials = polynomials.size();
-  boost::container::small_vector<std::array<std::array<double, 5>, dim>, 20>
-    values_1d(n_polynomials);
+  boost::container::small_vector<ndarray<double, dim, 5>, 20> values_1d(
+    n_polynomials);
   if (n_values_and_derivatives == 1)
     for (unsigned int i = 0; i < n_polynomials; ++i)
       for (unsigned int d = 0; d < dim; ++d)
@@ -380,7 +382,7 @@ TensorProductPolynomials<dim, PolynomialType>::evaluate(
       else
         for (indices[0] = 0; indices[0] < n_polynomials; ++indices[0], ++ind)
           {
-            unsigned int i = index_map_inverse[ind];
+            const unsigned int i = index_map_inverse[ind];
 
             if (update_values)
               {
@@ -606,7 +608,7 @@ AnisotropicPolynomials<dim>::compute_grad(const unsigned int i,
   // uni-directional derivatives at
   // the given point in each
   // co-ordinate direction
-  std::array<std::array<double, 2>, dim> v;
+  ndarray<double, dim, 2> v;
   for (unsigned int d = 0; d < dim; ++d)
     polynomials[d][indices[d]].value(p(d), 1, v[d].data());
 
@@ -644,7 +646,7 @@ AnisotropicPolynomials<dim>::compute_grad_grad(const unsigned int i,
   std::array<unsigned int, dim> indices;
   compute_index(i, indices);
 
-  std::array<std::array<double, 3>, dim> v;
+  ndarray<double, dim, 3> v;
   for (unsigned int d = 0; d < dim; ++d)
     polynomials[d][indices[d]].value(p(d), 2, v[d].data());
 

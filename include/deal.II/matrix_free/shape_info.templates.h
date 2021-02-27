@@ -29,7 +29,11 @@
 #include <deal.II/fe/fe_dgp.h>
 #include <deal.II/fe/fe_dgq.h>
 #include <deal.II/fe/fe_poly.h>
+#include <deal.II/fe/fe_pyramid_p.h>
 #include <deal.II/fe/fe_q_dg0.h>
+#include <deal.II/fe/fe_simplex_p.h>
+#include <deal.II/fe/fe_simplex_p_bubbles.h>
+#include <deal.II/fe/fe_wedge_p.h>
 
 #include <deal.II/grid/reference_cell.h>
 
@@ -37,8 +41,6 @@
 
 #include <deal.II/matrix_free/shape_info.h>
 #include <deal.II/matrix_free/util.h>
-
-#include <deal.II/simplex/fe_lib.h>
 
 
 DEAL_II_NAMESPACE_OPEN
@@ -91,10 +93,10 @@ namespace internal
 
       const auto fe_poly = dynamic_cast<const FE_Poly<dim, dim> *>(&fe);
 
-      if (dynamic_cast<const Simplex::FE_P<dim, dim> *>(&fe) != nullptr ||
-          dynamic_cast<const Simplex::FE_DGP<dim, dim> *>(&fe) != nullptr ||
-          dynamic_cast<const Simplex::FE_WedgeP<dim, dim> *>(&fe) != nullptr ||
-          dynamic_cast<const Simplex::FE_PyramidP<dim, dim> *>(&fe) != nullptr)
+      if (dynamic_cast<const FE_SimplexP<dim, dim> *>(&fe) != nullptr ||
+          dynamic_cast<const FE_SimplexDGP<dim, dim> *>(&fe) != nullptr ||
+          dynamic_cast<const FE_WedgeP<dim, dim> *>(&fe) != nullptr ||
+          dynamic_cast<const FE_PyramidP<dim, dim> *>(&fe) != nullptr)
         {
           scalar_lexicographic.resize(fe.n_dofs_per_cell());
           for (unsigned int i = 0; i < scalar_lexicographic.size(); ++i)
@@ -205,10 +207,10 @@ namespace internal
 #ifdef DEAL_II_WITH_SIMPLEX_SUPPORT
               // Simplices are a special case since the polynomial family is not
               // indicative of their support
-              if (dynamic_cast<const Simplex::FE_P<dim> *>(fe_poly_ptr) ||
-                  dynamic_cast<const Simplex::FE_DGP<dim> *>(fe_poly_ptr) ||
-                  dynamic_cast<const Simplex::FE_WedgeP<dim> *>(fe_poly_ptr) ||
-                  dynamic_cast<const Simplex::FE_PyramidP<dim> *>(fe_poly_ptr))
+              if (dynamic_cast<const FE_SimplexP<dim> *>(fe_poly_ptr) ||
+                  dynamic_cast<const FE_SimplexDGP<dim> *>(fe_poly_ptr) ||
+                  dynamic_cast<const FE_WedgeP<dim> *>(fe_poly_ptr) ||
+                  dynamic_cast<const FE_PyramidP<dim> *>(fe_poly_ptr))
                 return true;
 #endif
 
@@ -244,13 +246,13 @@ namespace internal
     {
 #ifdef DEAL_II_WITH_SIMPLEX_SUPPORT
       if (quad_in.is_tensor_product() == false ||
-          dynamic_cast<const Simplex::FE_P<dim> *>(
+          dynamic_cast<const FE_SimplexP<dim> *>(
             &fe_in.base_element(base_element_number)) ||
-          dynamic_cast<const Simplex::FE_DGP<dim> *>(
+          dynamic_cast<const FE_SimplexDGP<dim> *>(
             &fe_in.base_element(base_element_number)) ||
-          dynamic_cast<const Simplex::FE_WedgeP<dim> *>(
+          dynamic_cast<const FE_WedgeP<dim> *>(
             &fe_in.base_element(base_element_number)) ||
-          dynamic_cast<const Simplex::FE_PyramidP<dim> *>(
+          dynamic_cast<const FE_PyramidP<dim> *>(
             &fe_in.base_element(base_element_number)))
         {
           // specialization for arbitrary finite elements and quadrature rules
@@ -314,63 +316,96 @@ namespace internal
                                   q] = grad[d];
               }
 
-          try
-            {
-              const auto reference_cell_type = ReferenceCell::get_simplex(dim);
+          {
+            const auto reference_cell = fe.reference_cell();
 
-              const auto quad_face  = get_face_quadrature(quad);
-              this->n_q_points_face = quad_face.size();
+            const auto  temp      = get_face_quadrature_collection(quad, false);
+            const auto &quad_face = temp.second;
 
-              const unsigned int n_face_orientations = dim == 2 ? 2 : 6;
-              const unsigned int n_faces =
-                ReferenceCell::internal::Info::get_cell(reference_cell_type)
-                  .n_faces();
+            if (reference_cell != temp.first)
+              {
+                // TODO: this might happen if the quadrature rule and the
+                // the FE do not match
+                this->n_q_points_face = 0;
+              }
+            else
+              {
+                this->n_q_points_face = quad_face[0].size();
 
-              const auto projected_quad_face =
-                QProjector<dim>::project_to_all_faces(reference_cell_type,
-                                                      quad_face);
+                n_q_points_faces.resize(quad_face.size());
+                for (unsigned int i = 0; i < quad_face.size(); ++i)
+                  n_q_points_faces[i] = quad_face[i].size();
 
-              shape_values_face.reinit(
-                {n_faces, n_face_orientations, n_dofs * n_q_points_face});
+                unsigned int n_q_points_face_max = 0;
 
-              shape_gradients_face.reinit(
-                {n_faces, n_face_orientations, dim, n_dofs * n_q_points_face});
+                for (unsigned int i = 0; i < quad_face.size(); ++i)
+                  n_q_points_face_max =
+                    std::max(n_q_points_face_max, quad_face[i].size());
 
-              for (unsigned int f = 0; f < n_faces; ++f)
-                for (unsigned int o = 0; o < n_face_orientations; ++o)
+                unsigned int n_max_vertices = 0;
+
+                for (unsigned int face_no = 0; face_no < quad_face.size();
+                     ++face_no)
+                  n_max_vertices = std::max(
+                    n_max_vertices,
+                    reference_cell.face_reference_cell(face_no).n_vertices());
+
+                const auto projected_quad_face =
+                  QProjector<dim>::project_to_all_faces(reference_cell,
+                                                        quad_face);
+
+                const unsigned int n_max_face_orientations =
+                  dim == 2 ? 2 : (2 * n_max_vertices);
+
+                shape_values_face.reinit({quad_face.size(),
+                                          n_max_face_orientations,
+                                          n_dofs * n_q_points_face_max});
+
+                shape_gradients_face.reinit({quad_face.size(),
+                                             n_max_face_orientations,
+                                             dim,
+                                             n_dofs * n_q_points_face_max});
+
+                for (unsigned int f = 0; f < quad_face.size(); ++f)
                   {
-                    const auto offset =
-                      QProjector<dim>::DataSetDescriptor::face(
-                        reference_cell_type,
-                        f,
-                        (o ^ 1) & 1,  // face_orientation
-                        (o >> 1) & 1, // face_flip
-                        (o >> 2) & 1, // face_rotation
-                        n_q_points_face);
+                    const unsigned int n_face_orientations =
+                      dim == 2 ?
+                        2 :
+                        (2 *
+                         reference_cell.face_reference_cell(f).n_vertices());
 
-                    for (unsigned int i = 0; i < n_dofs; ++i)
-                      for (unsigned int q = 0; q < n_q_points_face; ++q)
-                        {
-                          const auto point =
-                            projected_quad_face.point(q + offset);
+                    const unsigned int n_q_points_face = quad_face[f].size();
 
-                          shape_values_face(f, o, i * n_q_points_face + q) =
-                            fe.shape_value(i, point);
+                    for (unsigned int o = 0; o < n_face_orientations; ++o)
+                      {
+                        const auto offset =
+                          QProjector<dim>::DataSetDescriptor::face(
+                            reference_cell,
+                            f,
+                            (o ^ 1) & 1,  // face_orientation
+                            (o >> 1) & 1, // face_flip
+                            (o >> 2) & 1, // face_rotation
+                            quad_face);
 
-                          const auto grad = fe.shape_grad(i, point);
+                        for (unsigned int i = 0; i < n_dofs; ++i)
+                          for (unsigned int q = 0; q < n_q_points_face; ++q)
+                            {
+                              const auto point =
+                                projected_quad_face.point(q + offset);
 
-                          for (int d = 0; d < dim; ++d)
-                            shape_gradients_face(
-                              f, o, d, i * n_q_points_face + q) = grad[d];
-                        }
+                              shape_values_face(f, o, i * n_q_points_face + q) =
+                                fe.shape_value(i, point);
+
+                              const auto grad = fe.shape_grad(i, point);
+
+                              for (int d = 0; d < dim; ++d)
+                                shape_gradients_face(
+                                  f, o, d, i * n_q_points_face + q) = grad[d];
+                            }
+                      }
                   }
-            }
-          catch (...)
-            {
-              // TODO: this might happen if the quadrature rule and the
-              // the FE do not match
-              this->n_q_points_face = 0;
-            }
+              }
+          }
 
           // TODO: also fill shape_hessians, inverse_shape_values,
           //   shape_data_on_face, quadrature_data_on_face,

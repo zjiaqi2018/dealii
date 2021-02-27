@@ -55,9 +55,9 @@ test(const unsigned int n_refinements,
 
       if (do_simplex_mesh)
         {
-          fe      = std::make_unique<Simplex::FE_P<dim>>(fe_degree_fine);
-          quad    = std::make_unique<Simplex::QGauss<dim>>(fe_degree_fine + 1);
-          mapping = std::make_unique<MappingFE<dim>>(Simplex::FE_P<dim>(1));
+          fe      = std::make_unique<FE_SimplexP<dim>>(fe_degree_fine);
+          quad    = std::make_unique<QGaussSimplex<dim>>(fe_degree_fine + 1);
+          mapping = std::make_unique<MappingFE<dim>>(FE_SimplexP<dim>(1));
         }
       else
         {
@@ -100,8 +100,9 @@ test(const unsigned int n_refinements,
                                                constraints[l + 1],
                                                constraints[l]);
 
-  MGTransferGlobalCoarsening<Operator<dim, Number>, VectorType> transfer(
-    operators, transfers);
+  MGTransferGlobalCoarsening<dim, VectorType> transfer(
+    transfers,
+    [&](const auto l, auto &vec) { operators[l].initialize_dof_vector(vec); });
 
   GMGParameters mg_data; // TODO
 
@@ -150,9 +151,6 @@ main(int argc, char **argv)
   for (unsigned int n_refinements = 2; n_refinements <= 4; ++n_refinements)
     for (unsigned int degree = 2; degree <= 4; ++degree)
       test<2>(n_refinements, degree, false /*quadrilateral*/);
-
-  return 0; // TODO: enable simplex test once MGTwoLevelTransfer works for
-            // simplex meshes
 
   for (unsigned int n_refinements = 2; n_refinements <= 4; ++n_refinements)
     for (unsigned int degree = 2; degree <= 2; ++degree)

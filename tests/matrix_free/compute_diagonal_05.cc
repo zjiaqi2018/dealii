@@ -17,11 +17,12 @@
 // Test MatrixFreeTools::compute_diagonal() for a Laplace operator on a simplex
 // mesh.
 
+#include <deal.II/base/quadrature_lib.h>
+
+#include <deal.II/fe/fe_simplex_p.h>
 #include <deal.II/fe/mapping_fe.h>
 
-#include <deal.II/simplex/fe_lib.h>
-#include <deal.II/simplex/grid_generator.h>
-#include <deal.II/simplex/quadrature_lib.h>
+#include <deal.II/grid/grid_generator.h>
 
 #include "compute_diagonal_util.h"
 
@@ -39,8 +40,8 @@ test()
   const unsigned int fe_degree = 2;
   const unsigned int n_points  = 3;
 
-  const Simplex::FE_P<dim> fe_q(fe_degree);
-  const FESystem<dim>      fe(fe_q, n_components);
+  const FE_SimplexP<dim> fe_q(fe_degree);
+  const FESystem<dim>    fe(fe_q, n_components);
 
   // setup dof-handlers
   DoFHandler<dim> dof_handler(tria);
@@ -48,7 +49,7 @@ test()
 
   AffineConstraints<Number> constraint;
 
-  MappingFE<dim> mapping(Simplex::FE_P<dim>{1});
+  MappingFE<dim> mapping(FE_SimplexP<dim>{1});
 
   VectorTools::interpolate_boundary_values(mapping,
                                            dof_handler,
@@ -62,7 +63,7 @@ test()
   typename MatrixFree<dim, Number, VectorizedArrayType>::AdditionalData
     additional_data;
   additional_data.mapping_update_flags = update_values | update_gradients;
-  Simplex::QGauss<dim> quad(fe_degree + 1);
+  QGaussSimplex<dim> quad(fe_degree + 1);
 
   MatrixFree<dim, Number, VectorizedArrayType> matrix_free;
   matrix_free.reinit(mapping, dof_handler, constraint, quad, additional_data);

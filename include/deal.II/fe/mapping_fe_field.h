@@ -13,8 +13,8 @@
 //
 // ---------------------------------------------------------------------
 
-#ifndef dealii_mapping_fe_h
-#define dealii_mapping_fe_h
+#ifndef dealii_mapping_fe_field_h
+#define dealii_mapping_fe_field_h
 
 
 #include <deal.II/base/config.h>
@@ -209,6 +209,9 @@ public:
    */
   virtual bool
   preserves_vertex_locations() const override;
+
+  virtual bool
+  is_compatible_with(const ReferenceCell &reference_cell) const override;
 
   /**
    * Return the mapped vertices of a cell.

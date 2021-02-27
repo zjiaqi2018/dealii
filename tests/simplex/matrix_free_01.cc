@@ -18,10 +18,16 @@
 // continuous elements and compare results between matrix-free and matrix-based
 // implementations.
 
+#include <deal.II/base/quadrature_lib.h>
+
 #include <deal.II/dofs/dof_handler.h>
 #include <deal.II/dofs/dof_tools.h>
 
+#include <deal.II/fe/fe_pyramid_p.h>
 #include <deal.II/fe/fe_q.h>
+#include <deal.II/fe/fe_simplex_p.h>
+#include <deal.II/fe/fe_simplex_p_bubbles.h>
+#include <deal.II/fe/fe_wedge_p.h>
 #include <deal.II/fe/mapping_fe.h>
 
 #include <deal.II/grid/grid_generator.h>
@@ -38,10 +44,6 @@
 
 #include <deal.II/numerics/data_out.h>
 #include <deal.II/numerics/vector_tools.h>
-
-#include <deal.II/simplex/fe_lib.h>
-#include <deal.II/simplex/grid_generator.h>
-#include <deal.II/simplex/quadrature_lib.h>
 
 #include "../tests.h"
 
@@ -137,24 +139,24 @@ test(const unsigned int v, const unsigned int degree, const bool do_helmholtz)
     {
       GridGenerator::subdivided_hyper_cube_with_simplices(tria,
                                                           dim == 2 ? 16 : 8);
-      fe         = std::make_shared<Simplex::FE_P<dim>>(degree);
-      quad       = std::make_shared<Simplex::QGauss<dim>>(degree + 1);
-      fe_mapping = std::make_shared<Simplex::FE_P<dim>>(1);
+      fe         = std::make_shared<FE_SimplexP<dim>>(degree);
+      quad       = std::make_shared<QGaussSimplex<dim>>(degree + 1);
+      fe_mapping = std::make_shared<FE_SimplexP<dim>>(1);
     }
   else if (v == 1)
     {
       GridGenerator::subdivided_hyper_cube_with_wedges(tria, dim == 2 ? 16 : 8);
-      fe         = std::make_shared<Simplex::FE_WedgeP<dim>>(degree);
-      quad       = std::make_shared<Simplex::QGaussWedge<dim>>(degree + 1);
-      fe_mapping = std::make_shared<Simplex::FE_WedgeP<dim>>(1);
+      fe         = std::make_shared<FE_WedgeP<dim>>(degree);
+      quad       = std::make_shared<QGaussWedge<dim>>(degree + 1);
+      fe_mapping = std::make_shared<FE_WedgeP<dim>>(1);
     }
   else if (v == 2)
     {
       GridGenerator::subdivided_hyper_cube_with_pyramids(tria,
                                                          dim == 2 ? 16 : 8);
-      fe         = std::make_shared<Simplex::FE_PyramidP<dim>>(degree);
-      quad       = std::make_shared<Simplex::QGaussPyramid<dim>>(degree + 1);
-      fe_mapping = std::make_shared<Simplex::FE_PyramidP<dim>>(1);
+      fe         = std::make_shared<FE_PyramidP<dim>>(degree);
+      quad       = std::make_shared<QGaussPyramid<dim>>(degree + 1);
+      fe_mapping = std::make_shared<FE_PyramidP<dim>>(1);
     }
   else
     Assert(false, ExcNotImplemented());

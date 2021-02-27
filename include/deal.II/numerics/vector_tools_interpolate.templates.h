@@ -531,7 +531,7 @@ namespace VectorTools
     VectorType &                                               vec,
     const ComponentMask &                                      component_mask)
   {
-    interpolate(StaticMappingQ1<dim, spacedim>::mapping,
+    interpolate(get_default_linear_mapping(dof.get_triangulation()),
                 dof,
                 function,
                 vec,
@@ -652,8 +652,13 @@ namespace VectorTools
       {
         const Quadrature<dim> quad(fe.get_unit_support_points());
 
-        MappingQGeneric<dim, spacedim> map_q(fe.degree);
-        FEValues<dim, spacedim> fe_v(map_q, fe, quad, update_quadrature_points);
+        const auto map_q =
+          fe.reference_cell().template get_default_mapping<dim, spacedim>(
+            fe.degree);
+        FEValues<dim, spacedim>              fe_v(*map_q,
+                                     fe,
+                                     quad,
+                                     update_quadrature_points);
         std::vector<types::global_dof_index> dofs(fe.n_dofs_per_cell());
 
         AssertDimension(fe.n_dofs_per_cell(),

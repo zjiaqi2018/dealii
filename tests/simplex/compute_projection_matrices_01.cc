@@ -14,22 +14,26 @@
 // ---------------------------------------------------------------------
 
 
-// Test Simplex::FE_Poly::get_prolongation_matrix()
+// Test FE_SimplexPoly::get_prolongation_matrix()
 // (and indirectly FETools::compute_embedding_matrices() for simplices).
 
 
+#include <deal.II/base/quadrature_lib.h>
+
+#include <deal.II/fe/fe_pyramid_p.h>
+#include <deal.II/fe/fe_simplex_p.h>
+#include <deal.II/fe/fe_simplex_p_bubbles.h>
 #include <deal.II/fe/fe_tools.h>
 #include <deal.II/fe/fe_values.h>
+#include <deal.II/fe/fe_wedge_p.h>
 #include <deal.II/fe/mapping_fe.h>
+
+#include <deal.II/grid/grid_generator.h>
 
 #include <deal.II/lac/householder.h>
 
 #include <deal.II/numerics/data_out.h>
 #include <deal.II/numerics/vector_tools.h>
-
-#include <deal.II/simplex/fe_lib.h>
-#include <deal.II/simplex/grid_generator.h>
-#include <deal.II/simplex/quadrature_lib.h>
 
 #include "../tests.h"
 
@@ -61,8 +65,8 @@ main()
   const int dim      = 2;
   const int spacedim = 2;
 
-  Simplex::FE_P<dim, spacedim> fe(2);
-  MappingFE<dim>               mapping(Simplex::FE_P<dim>(1));
+  FE_SimplexP<dim, spacedim> fe(2);
+  MappingFE<dim>             mapping(FE_SimplexP<dim>(1));
 
   const unsigned int n_refinements = 2;
 

@@ -24,7 +24,7 @@
 
 template <unsigned int n_points>
 void
-test(const ReferenceCell::Type type, const unsigned int n_orientations)
+test(const ReferenceCell type, const unsigned int n_orientations)
 {
   for (unsigned int o = 0; o < n_orientations; ++o)
     {
@@ -33,10 +33,9 @@ test(const ReferenceCell::Type type, const unsigned int n_orientations)
       for (unsigned int i = 0; i < n_points; ++i)
         origin[i] = i;
 
-      const auto permuted =
-        ReferenceCell::permute_according_orientation(type, origin, o);
+      const auto permuted = type.permute_according_orientation(origin, o);
       const unsigned int origin_back =
-        ReferenceCell::compute_orientation(type, permuted, origin);
+        type.compute_orientation(permuted, origin);
 
       AssertDimension(o, origin_back);
     }
@@ -47,9 +46,9 @@ main()
 {
   initlog();
 
-  test<2>(ReferenceCell::Type::Line, 2);
-  test<3>(ReferenceCell::Type::Tri, 3);
-  test<4>(ReferenceCell::Type::Quad, 4);
+  test<2>(ReferenceCells::Line, 2);
+  test<3>(ReferenceCells::Triangle, 3);
+  test<4>(ReferenceCells::Quadrilateral, 4);
 
   deallog << "OK!" << std::endl;
 }

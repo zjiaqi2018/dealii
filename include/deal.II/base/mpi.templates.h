@@ -44,6 +44,30 @@ namespace Utilities
        * Return the corresponding MPI data type id for the argument given.
        */
       inline MPI_Datatype
+      mpi_type_id(const char *)
+      {
+        return MPI_CHAR;
+      }
+
+
+
+      inline MPI_Datatype
+      mpi_type_id(const signed char *)
+      {
+        return MPI_SIGNED_CHAR;
+      }
+
+
+
+      inline MPI_Datatype
+      mpi_type_id(const short *)
+      {
+        return MPI_SHORT;
+      }
+
+
+
+      inline MPI_Datatype
       mpi_type_id(const int *)
       {
         return MPI_INT;
@@ -55,6 +79,22 @@ namespace Utilities
       mpi_type_id(const long int *)
       {
         return MPI_LONG;
+      }
+
+
+
+      inline MPI_Datatype
+      mpi_type_id(const unsigned char *)
+      {
+        return MPI_UNSIGNED_CHAR;
+      }
+
+
+
+      inline MPI_Datatype
+      mpi_type_id(const unsigned short *)
+      {
+        return MPI_UNSIGNED_SHORT;
       }
 
 
@@ -424,12 +464,21 @@ namespace Utilities
       // 1) collect vector entries and create union
       std::vector<T> result = vec;
 
-      if (this_mpi_process(comm) == 0)
+      const unsigned int rank  = this_mpi_process(comm);
+      const unsigned int nproc = n_mpi_processes(comm);
+
+      for (unsigned int stride = 1; stride < nproc; stride *= 2)
         {
-          for (unsigned int i = 1; i < n_mpi_processes(comm); i++)
+          const unsigned int rank_recv = (2 * stride) * (rank / (2 * stride));
+          const unsigned int rank_send = rank_recv + stride;
+
+          if (rank_send >= nproc) // nothing to do
+            continue;
+
+          if (rank_recv == rank) // process receives data
             {
               MPI_Status status;
-              const auto ierr_1 = MPI_Probe(MPI_ANY_SOURCE,
+              const auto ierr_1 = MPI_Probe(rank_send,
                                             internal::Tags::compute_union,
                                             comm,
                                             &status);
@@ -438,7 +487,7 @@ namespace Utilities
               int        amount;
               const auto ierr_2 =
                 MPI_Get_count(&status,
-                              internal::mpi_type_id(vec.data()),
+                              internal::mpi_type_id(result.data()),
                               &amount);
               AssertThrowMPI(ierr_2);
 
@@ -447,7 +496,7 @@ namespace Utilities
 
               const auto ierr_3 = MPI_Recv(result.data() + old_size,
                                            amount,
-                                           internal::mpi_type_id(vec.data()),
+                                           internal::mpi_type_id(result.data()),
                                            status.MPI_SOURCE,
                                            status.MPI_TAG,
                                            comm,
@@ -458,16 +507,16 @@ namespace Utilities
               result.erase(std::unique(result.begin(), result.end()),
                            result.end());
             }
-        }
-      else
-        {
-          const auto ierr = MPI_Send(vec.data(),
-                                     vec.size(),
-                                     internal::mpi_type_id(vec.data()),
-                                     0,
-                                     internal::Tags::compute_union,
-                                     comm);
-          AssertThrowMPI(ierr);
+          else if (rank_send == rank) // process sends data
+            {
+              const auto ierr = MPI_Send(result.data(),
+                                         result.size(),
+                                         internal::mpi_type_id(result.data()),
+                                         rank_recv,
+                                         internal::Tags::compute_union,
+                                         comm);
+              AssertThrowMPI(ierr);
+            }
         }
 
       // 2) broadcast result

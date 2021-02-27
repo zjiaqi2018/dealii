@@ -137,7 +137,7 @@ namespace Step48
       }
 
     inv_mass_matrix.compress(VectorOperation::add);
-    for (unsigned int k = 0; k < inv_mass_matrix.local_size(); ++k)
+    for (unsigned int k = 0; k < inv_mass_matrix.locally_owned_size(); ++k)
       if (inv_mass_matrix.local_element(k) > 1e-15)
         inv_mass_matrix.local_element(k) =
           1. / inv_mass_matrix.local_element(k);
@@ -508,7 +508,7 @@ namespace Step48
     data_out.write_vtu_with_pvtu_record(
       "./", "solution", timestep_number, MPI_COMM_WORLD, 3);
 
-    solution.zero_out_ghosts();
+    solution.zero_out_ghost_values();
   }
 
 

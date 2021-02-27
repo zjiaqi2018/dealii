@@ -27,6 +27,7 @@
 
 #include <deal.II/fe/fe_dgq.h>
 #include <deal.II/fe/fe_q.h>
+#include <deal.II/fe/fe_simplex_p.h>
 #include <deal.II/fe/fe_tools.h>
 #include <deal.II/fe/mapping_fe.h>
 
@@ -54,62 +55,7 @@
 #include <deal.II/numerics/data_out.h>
 #include <deal.II/numerics/vector_tools.h>
 
-#include <deal.II/simplex/fe_lib.h>
-#include <deal.II/simplex/grid_generator.h>
-#include <deal.II/simplex/quadrature_lib.h>
-
 #include "../tests.h"
-
-namespace MGTransferGlobalCoarseningTools
-{
-  enum class PolynomialSequenceType
-  {
-    bisect,
-    decrease_by_one,
-    go_to_one
-  };
-
-  unsigned int
-  generate_level_degree(const unsigned int            previous_fe_degree,
-                        const PolynomialSequenceType &p_sequence)
-  {
-    switch (p_sequence)
-      {
-        case PolynomialSequenceType::bisect:
-          return std::max(previous_fe_degree / 2, 1u);
-        case PolynomialSequenceType::decrease_by_one:
-          return std::max(previous_fe_degree - 1, 1u);
-        case PolynomialSequenceType::go_to_one:
-          return 1u;
-        default:
-          Assert(false, StandardExceptions::ExcNotImplemented());
-          return 1u;
-      }
-  }
-
-  std::vector<unsigned int>
-  create_p_sequence(const unsigned int            degree,
-                    const PolynomialSequenceType &p_sequence)
-  {
-    std::vector<unsigned int> degrees;
-    degrees.push_back(degree);
-
-    unsigned int previous_fe_degree = degree;
-    while (previous_fe_degree > 1)
-      {
-        const unsigned int level_degree =
-          generate_level_degree(previous_fe_degree, p_sequence);
-
-        degrees.push_back(level_degree);
-        previous_fe_degree = level_degree;
-      }
-
-    std::reverse(degrees.begin(), degrees.end());
-
-    return degrees;
-  }
-
-} // namespace MGTransferGlobalCoarseningTools
 
 template <int dim_, typename Number>
 class Operator : public Subscriptor

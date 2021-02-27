@@ -70,11 +70,15 @@
 #include "../tests.h"
 
 // simplex
+#include <deal.II/base/quadrature_lib.h>
+
+#include <deal.II/fe/fe_pyramid_p.h>
+#include <deal.II/fe/fe_simplex_p.h>
+#include <deal.II/fe/fe_simplex_p_bubbles.h>
+#include <deal.II/fe/fe_wedge_p.h>
 #include <deal.II/fe/mapping_fe.h>
 
-#include <deal.II/simplex/fe_lib.h>
-#include <deal.II/simplex/grid_generator.h>
-#include <deal.II/simplex/quadrature_lib.h>
+#include <deal.II/grid/grid_generator.h>
 
 //#define HEX
 
@@ -417,10 +421,10 @@ namespace Step18
   template <int dim>
   TopLevel<dim>::TopLevel()
     : triangulation()
-    , fe(Simplex::FE_P<dim>(degree), dim)
+    , fe(FE_SimplexP<dim>(degree), dim)
     , dof_handler(triangulation)
-    , quadrature_formula(Simplex::QGauss<dim>(fe.degree + 1))
-    , mapping(Simplex::FE_P<dim>(1))
+    , quadrature_formula(QGaussSimplex<dim>(fe.degree + 1))
+    , mapping(FE_SimplexP<dim>(1))
     , present_time(0.0)
     , present_timestep(1.0)
     , end_time(10.0)

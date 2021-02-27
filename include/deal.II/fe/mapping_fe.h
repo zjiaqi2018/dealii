@@ -79,6 +79,15 @@ public:
   unsigned int
   get_degree() const;
 
+  // for documentation, see the Mapping base class
+  virtual BoundingBox<spacedim>
+  get_bounding_box(const typename Triangulation<dim, spacedim>::cell_iterator
+                     &cell) const override;
+
+
+  virtual bool
+  is_compatible_with(const ReferenceCell &reference_cell) const override;
+
   /**
    * Always returns @p true because the default implementation of functions in
    * this class preserves vertex locations.
@@ -97,11 +106,7 @@ public:
     const typename Triangulation<dim, spacedim>::cell_iterator &cell,
     const Point<dim> &p) const override;
 
-  /**
-   * for documentation, see the Mapping base class
-   *
-   * note: not implemented yet
-   */
+  // for documentation, see the Mapping base class
   virtual Point<dim>
   transform_real_to_unit_cell(
     const typename Triangulation<dim, spacedim>::cell_iterator &cell,
@@ -465,6 +470,9 @@ protected:
   virtual std::vector<Point<spacedim>>
   compute_mapping_support_points(
     const typename Triangulation<dim, spacedim>::cell_iterator &cell) const;
+
+private:
+  Table<2, double> mapping_support_point_weights;
 };
 
 
@@ -598,6 +606,8 @@ MappingFE<dim, spacedim>::preserves_vertex_locations() const
 {
   return true;
 }
+
+
 
 #endif // DOXYGEN
 

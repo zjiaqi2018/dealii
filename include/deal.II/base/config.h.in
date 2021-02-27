@@ -149,7 +149,18 @@
 #cmakedefine DEAL_II_HAVE_CXX17_BESSEL_FUNCTIONS
 #cmakedefine DEAL_II_CXX14_CONSTEXPR_BUG
 
+/**
+ * Macro indicating that the current feature will be removed in a future
+ * release.
+ */
 #cmakedefine DEAL_II_DEPRECATED @DEAL_II_DEPRECATED@
+
+/**
+ * Same as above, but for things that have been deprecated during the current
+ * development cycle. By default, no warnings are printed for a feature
+ * deprecated prior to a release until <em>after</em> that release has been
+ * finalized - see DEAL_II_EARLY_DEPRECATIONS for more information.
+ */
 #cmakedefine DEAL_II_DEPRECATED_EARLY @DEAL_II_DEPRECATED_EARLY@
 #cmakedefine DEAL_II_FALLTHROUGH @DEAL_II_FALLTHROUGH@
 #cmakedefine DEAL_II_CONSTEXPR @DEAL_II_CONSTEXPR@
@@ -191,6 +202,9 @@
 
 /* cmake/modules/FindARPACK.cmake */
 #cmakedefine DEAL_II_ARPACK_WITH_PARPACK
+
+/* cmake/modules/FindGMSH.cmake */
+#cmakedefine DEAL_II_GMSH_WITH_API
 
 /* cmake/modules/FindPETSC.cmake */
 #cmakedefine DEAL_II_PETSC_WITH_COMPLEX
@@ -436,6 +450,15 @@ _Pragma("GCC diagnostic pop")
 #  define DEAL_II_ENABLE_EXTRA_DIAGNOSTICS
 
 #endif
+
+/***********************************************************************
+ * Define macros for picking the correct C linkage name for a Fortran function.
+ * See cmake/configure/configure_fortran_mangling.cmake for more information.
+ */
+
+#define DEAL_II_FORTRAN_MANGLE(name, NAME) @DEAL_II_FORTRAN_MANGLE@
+
+#define DEAL_II_FORTRAN_MANGLE_UNDERSCORE(name, NAME) @DEAL_II_FORTRAN_MANGLE_UNDERSCORE@
 
 /***********************************************************************
  * Define a portable preprocessor macro that generates custom warnings

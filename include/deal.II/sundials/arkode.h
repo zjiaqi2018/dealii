@@ -41,6 +41,9 @@
 #  ifdef DEAL_II_WITH_MPI
 #    include <nvector/nvector_parallel.h>
 #  endif
+#  include <deal.II/sundials/n_vector.h>
+#  include <deal.II/sundials/sunlinsol_wrapper.h>
+
 #  include <boost/signals2.hpp>
 
 #  include <sundials/sundials_linearsolver.h>
@@ -52,23 +55,6 @@
 
 DEAL_II_NAMESPACE_OPEN
 
-// Forward declarations
-#  if DEAL_II_SUNDIALS_VERSION_GTE(4, 0, 0)
-#    ifndef DOXYGEN
-namespace SUNDIALS
-{
-  // Forward declaration
-  template <typename VectorType>
-  struct SundialsOperator;
-
-  template <typename VectorType>
-  struct SundialsPreconditioner;
-
-  template <typename VectorType>
-  class SundialsLinearSolverWrapper;
-} // namespace SUNDIALS
-#    endif
-#  endif
 
 // Shorthand notation for ARKODE error codes.
 #  define AssertARKode(code) Assert(code >= 0, ExcARKodeError(code))
@@ -78,41 +64,6 @@ namespace SUNDIALS
  */
 namespace SUNDIALS
 {
-#  if DEAL_II_SUNDIALS_VERSION_GTE(4, 0, 0)
-  /**
-   * Type of function objects to interface with SUNDIALS linear solvers
-   *
-   * This function type encapsulates the action of solving $P^{-1}Ax=P^{-1}b$.
-   * The LinearOperator @p op encapsulates the matrix vector product $Ax$ and
-   * the LinearOperator @p prec encapsulates the application of the
-   * preconditioner $P^{-1}z$.
-   * The user can specify function objects of this type to attach custom linear
-   * solver routines to SUNDIALS. The two LinearOperators @p op and @p prec are
-   * built internally by SUNDIALS based on user settings. The parameters are
-   * interpreted as follows:
-   *
-   * @param[in] op A LinearOperator that applies the matrix vector product
-   * @param[in] prec A LinearOperator that applies the preconditioner
-   * @param[out] x The output solution vector
-   * @param[in] b The right-hand side
-   * @param[in] tol Tolerance for the iterative solver
-   *
-   * This function should return:
-   * - 0: Success
-   * - >0: Recoverable error, ARKode will reattempt the solution and call this
-   *       function again.
-   * - <0: Unrecoverable error, the computation will be aborted and an
-   *       assertion will be thrown.
-   */
-  template <typename VectorType>
-  using LinearSolveFunction =
-    std::function<int(SundialsOperator<VectorType> &      op,
-                      SundialsPreconditioner<VectorType> &prec,
-                      VectorType &                        x,
-                      const VectorType &                  b,
-                      double                              tol)>;
-#  endif
-
   /**
    * Interface to SUNDIALS additive Runge-Kutta methods (ARKode).
    *
@@ -278,10 +229,8 @@ namespace SUNDIALS
    * $z_j$ where $j < i$). Additional information on the specific predictor
    * algorithms implemented in ARKode is provided in ARKode documentation.
    *
-   * The user has to provide the implementation of the following
-   *`std::function`s:
-   *  - reinit_vector()
-   * and either one or both of
+   * The user has to provide the implementation of at least one (or both) of the
+   * following `std::function`s:
    *  - implicit_function()
    *  - explicit_function()
    *
@@ -361,12 +310,7 @@ namespace SUNDIALS
    *
    * SUNDIALS::ARKode<VectorType> ode;
    *
-   * ode.reinit_vector = [] (VectorType&v)
-   * {
-   *   v.reinit(2);
-   * };
-   *
-   * double kappa = 1.0;
+   * const double kappa = 1.0;
    *
    * ode.explicit_function = [kappa] (double,
    *                                  const VectorType &y,
@@ -610,26 +554,7 @@ namespace SUNDIALS
      * @param[in,out] y   The new initial solution
      */
     void
-    reset(const double t, const double h, const VectorType &y);
-
-    /*!
-     * Create a new SUNDIALS vector from a given template.
-     *
-     * @note Vectors created this way should be freed with free_vector().
-     *
-     * @param template_vector The vector to use as a template for the layout of
-     *   a new vector.
-     */
-    N_Vector
-    create_vector(const VectorType &template_vector) const;
-
-    /**
-     * Free a SUNDIALS vector created with create_vector().
-     *
-     * @param vector The vector to free
-     */
-    void
-    free_vector(N_Vector vector) const;
+    reset(const double t, const double h, VectorType &y);
 
     /**
      * Provides user access to the internally used ARKODE memory.
@@ -651,9 +576,14 @@ namespace SUNDIALS
     get_arkode_memory() const;
 
     /**
-     * A function object that users need to supply and that is intended to
-     * reinit the given vector.
+     * A function object that was used to `reinit` the given vector. Setting
+     * this field does no longer have any effect and all auxiliary vectors are
+     * reinit-ed automatically based on the user-supplied vector in solve_ode().
+     *
+     * @deprecated This function is no longer used and can be safely removed in
+     *   user code.
      */
+    DEAL_II_DEPRECATED
     std::function<void(VectorType &)> reinit_vector;
 
     /**
@@ -1299,7 +1229,7 @@ namespace SUNDIALS
     /**
      * Set up the (non)linear solver and preconditioners in the ARKODE memory
      * object based on the user-specified functions.
-     * @param solution The solution vector whihc is used as a template to create
+     * @param solution The solution vector which is used as a template to create
      *   new vectors.
      */
     void
@@ -1335,12 +1265,12 @@ namespace SUNDIALS
     /**
      * ARKode solution vector.
      */
-    N_Vector yy;
+    internal::NVectorView<VectorType> yy;
 
     /**
      * ARKode absolute tolerances vector.
      */
-    N_Vector abs_tolls;
+    internal::NVectorView<VectorType> abs_tolls;
 
     /**
      * MPI communicator. SUNDIALS solver runs happily in
@@ -1355,8 +1285,8 @@ namespace SUNDIALS
     GrowingVectorMemory<VectorType> mem;
 
 #  if DEAL_II_SUNDIALS_VERSION_GTE(4, 0, 0)
-    std::unique_ptr<SundialsLinearSolverWrapper<VectorType>> linear_solver;
-    std::unique_ptr<SundialsLinearSolverWrapper<VectorType>> mass_solver;
+    std::unique_ptr<internal::LinearSolverWrapper<VectorType>> linear_solver;
+    std::unique_ptr<internal::LinearSolverWrapper<VectorType>> mass_solver;
 #  endif
 
 #  ifdef DEAL_II_WITH_PETSC
@@ -1373,107 +1303,6 @@ namespace SUNDIALS
 #  endif   // DEAL_II_WITH_PETSC
   };
 
-#  if DEAL_II_SUNDIALS_VERSION_GTE(4, 0, 0)
-
-  /**
-   * A linear operator that wraps SUNDIALS functionality.
-   */
-  template <typename VectorType>
-  struct SundialsOperator
-  {
-    /**
-     * Apply this LinearOperator to @p src and store the result in @p dst.
-     */
-    void
-    vmult(VectorType &dst, const VectorType &src) const;
-
-    /**
-     * Constructor.
-     *
-     * @param solver The ARKode solver that uses this operator
-     * @param A_data Data required by @p a_times_fn
-     * @param a_times_fn A function pointer to the function that computes A*v
-     */
-    SundialsOperator(ARKode<VectorType> &solver,
-                     void *              A_data,
-                     ATimesFn            a_times_fn);
-
-  private:
-    /**
-     * Reference to the ARKode object that uses this SundialsOperator.
-     */
-    ARKode<VectorType> &solver;
-    /**
-     * Data necessary to evaluate a_times_fn.
-     */
-    void *A_data;
-
-    /**
-     * Function pointer declared by SUNDIALS to evaluate the matrix vector
-     * product.
-     */
-    ATimesFn a_times_fn;
-  };
-
-
-
-  /**
-   * A linear operator that wraps preconditioner functionality as specified by
-   * SUNDIALS. The vmult() function solves the preconditioner equation $Px=b$,
-   * i.e., it computes $x=P^{-1}b$.
-   */
-  template <typename VectorType>
-  struct SundialsPreconditioner
-  {
-    /**
-     * Apply the wrapped preconditioner, i.e., solve $Px=b$ where $x$ is the
-     * @p dst vector and $b$ the @p src vector.
-     *
-     * @param dst Result vector of the preconditioner application
-     * @param src Target vector of the preconditioner application
-     */
-    void
-    vmult(VectorType &dst, const VectorType &src) const;
-
-    /**
-     * Constructor.
-     *
-     * @param solver The ARKode solver that uses this operator
-     * @param P_data Data required by @p p_solve_fn
-     * @param p_solve_fn A function pointer to the function that computes A*v
-     * @param tol Tolerance, that an iterative solver should use to judge
-     *   convergence
-     */
-    SundialsPreconditioner(ARKode<VectorType> &solver,
-                           void *              P_data,
-                           PSolveFn            p_solve_fn,
-                           double              tol);
-
-  private:
-    /**
-     * Reference to the ARKode object that uses this SundialsPreconditioner.
-     */
-    ARKode<VectorType> &solver;
-
-    /**
-     * Data necessary to calls p_solve_fn
-     */
-    void *P_data;
-
-    /**
-     * Function pointer to a function that computes the preconditioner
-     * application.
-     */
-    PSolveFn p_solve_fn;
-
-    /**
-     * Potential tolerance to use in the internal solve of the preconditioner
-     * equation.
-     */
-    double tol;
-  };
-
-#  endif
 
   /**
    * Handle ARKode exceptions.

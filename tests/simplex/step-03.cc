@@ -16,8 +16,8 @@
 
 // Step-03 on a simplex mesh. Following incompatible modifications had to be
 // made:
-//  - Change the FE_Q to Simplex::FE_P.
-//  - Change QGauss to Simplex::QGauss.
+//  - Change the FE_Q to FE_SimplexP.
+//  - Change QGauss to QGaussSimplex.
 //  - Use MappingFE (Do not use default mapping).
 //  - Convert triangulation to a triangulation based on simplices.
 
@@ -29,8 +29,12 @@
 #include <deal.II/dofs/dof_handler.h>
 #include <deal.II/dofs/dof_tools.h>
 
+#include <deal.II/fe/fe_pyramid_p.h>
 #include <deal.II/fe/fe_q.h>
+#include <deal.II/fe/fe_simplex_p.h>
+#include <deal.II/fe/fe_simplex_p_bubbles.h>
 #include <deal.II/fe/fe_values.h>
+#include <deal.II/fe/fe_wedge_p.h>
 #include <deal.II/fe/mapping_fe.h>
 #include <deal.II/fe/mapping_q.h>
 
@@ -50,10 +54,6 @@
 #include <deal.II/numerics/data_out.h>
 #include <deal.II/numerics/matrix_tools.h>
 #include <deal.II/numerics/vector_tools.h>
-
-#include <deal.II/simplex/fe_lib.h>
-#include <deal.II/simplex/grid_generator.h>
-#include <deal.II/simplex/quadrature_lib.h>
 
 #include <fstream>
 #include <iostream>
@@ -84,8 +84,8 @@ private:
 
   Triangulation<dim, dim> triangulation;
   unsigned int            fe_degree;
-  Simplex::FE_P<dim>      fe;
-  Simplex::QGauss<dim>    quadrature_formula;
+  FE_SimplexP<dim>        fe;
+  QGaussSimplex<dim>      quadrature_formula;
 
   DoFHandler<dim> dof_handler;
   MappingFE<dim>  mapping;
@@ -103,7 +103,7 @@ Step3<dim>::Step3()
   , fe(fe_degree)
   , quadrature_formula(fe_degree + 1)
   , dof_handler(triangulation)
-  , mapping(Simplex::FE_P<dim>(1))
+  , mapping(FE_SimplexP<dim>(1))
 {}
 
 template <int dim>

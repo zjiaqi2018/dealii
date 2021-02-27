@@ -49,15 +49,19 @@
 
 // Finally, the new include file for using the mesh_loop from the MeshWorker
 // framework
+#include <deal.II/base/quadrature_lib.h>
+
+#include <deal.II/fe/fe_pyramid_p.h>
+#include <deal.II/fe/fe_simplex_p.h>
+#include <deal.II/fe/fe_simplex_p_bubbles.h>
+#include <deal.II/fe/fe_wedge_p.h>
 #include <deal.II/fe/mapping_fe.h>
+
+#include <deal.II/grid/grid_generator.h>
 
 #include <deal.II/lac/precondition.h>
 
 #include <deal.II/meshworker/mesh_loop.h>
-
-#include <deal.II/simplex/fe_lib.h>
-#include <deal.II/simplex/grid_generator.h>
-#include <deal.II/simplex/quadrature_lib.h>
 
 #include <fstream>
 #include <iostream>
@@ -207,7 +211,7 @@ namespace Step12
 #ifdef HEX
     const MappingQ1<dim> mapping;
 #else
-    Simplex::FE_P<dim>   fe_mapping;
+    FE_SimplexP<dim>     fe_mapping;
     const MappingFE<dim> mapping;
 #endif
 
@@ -215,7 +219,7 @@ namespace Step12
 #ifdef HEX
     FE_DGQ<dim> fe;
 #else
-    Simplex::FE_DGP<dim> fe;
+    FE_SimplexDGP<dim>   fe;
 #endif
     DoFHandler<dim> dof_handler;
 
@@ -391,9 +395,9 @@ namespace Step12
 
     QGauss<dim - 1> face_quad(degree + 1);
 #else
-    Simplex::QGauss<dim> quad(degree + 1);
+    QGaussSimplex<dim> quad(degree + 1);
 
-    Simplex::QGauss<dim - 1> face_quad(degree + 1);
+    QGaussSimplex<dim - 1> face_quad(degree + 1);
 #endif
 
     ScratchData<dim> scratch_data(mapping, fe, quad, face_quad);

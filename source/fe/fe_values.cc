@@ -44,7 +44,9 @@
 #include <deal.II/lac/vector.h>
 #include <deal.II/lac/vector_element_access.h>
 
+DEAL_II_DISABLE_EXTRA_DIAGNOSTICS
 #include <boost/container/small_vector.hpp>
+DEAL_II_ENABLE_EXTRA_DIAGNOSTICS
 
 #include <iomanip>
 #include <memory>
@@ -4388,10 +4390,7 @@ FEValues<dim, spacedim>::FEValues(const FiniteElement<dim, spacedim> &fe,
       q.size(),
       fe.n_dofs_per_cell(),
       update_default,
-      // TODO: We should query the default mapping for the kind of cell
-      // represented by 'fe' and 'q':
-      ReferenceCell::get_default_linear_mapping<dim, spacedim>(
-        ReferenceCell::get_hypercube(dim)),
+      fe.reference_cell().template get_default_linear_mapping<dim, spacedim>(),
       fe)
   , quadrature(q)
 {
@@ -4501,6 +4500,13 @@ void
 FEValues<dim, spacedim>::reinit(
   const typename Triangulation<dim, spacedim>::cell_iterator &cell)
 {
+  // Check that mapping and reference cell type are compatible:
+  Assert(this->get_mapping().is_compatible_with(cell->reference_cell()),
+         ExcMessage(
+           "You are trying to call FEValues::reinit() with a cell of type " +
+           cell->reference_cell().to_string() +
+           " with a Mapping that is not compatible with it."));
+
   // no FE in this cell, so no assertion
   // necessary here
   this->maybe_invalidate_previous_present_cell(cell);
@@ -4529,6 +4535,13 @@ FEValues<dim, spacedim>::reinit(
   Assert(static_cast<const FiniteElementData<dim> &>(*this->fe) ==
            static_cast<const FiniteElementData<dim> &>(cell->get_fe()),
          (typename FEValuesBase<dim, spacedim>::ExcFEDontMatch()));
+
+  // Check that mapping and reference cell type are compatible:
+  Assert(this->get_mapping().is_compatible_with(cell->reference_cell()),
+         ExcMessage(
+           "You are trying to call FEValues::reinit() with a cell of type " +
+           cell->reference_cell().to_string() +
+           " with a Mapping that is not compatible with it."));
 
   this->maybe_invalidate_previous_present_cell(cell);
   this->check_cell_similarity(cell);
@@ -4624,9 +4637,7 @@ FEFaceValuesBase<dim, spacedim>::FEFaceValuesBase(
   , quadrature(quadrature)
 {
   Assert(quadrature.size() == 1 ||
-           quadrature.size() ==
-             ReferenceCell::internal::Info::get_cell(fe.reference_cell_type())
-               .n_faces(),
+           quadrature.size() == fe.reference_cell().n_faces(),
          ExcInternalError());
 }
 
@@ -4716,10 +4727,7 @@ FEFaceValues<dim, spacedim>::FEFaceValues(
   : FEFaceValuesBase<dim, spacedim>(
       fe.n_dofs_per_cell(),
       update_flags,
-      // TODO: We should query the default mapping for the kind of cell
-      // represented by 'fe' and 'q':
-      ReferenceCell::get_default_linear_mapping<dim, spacedim>(
-        ReferenceCell::get_hypercube(dim)),
+      fe.reference_cell().template get_default_linear_mapping<dim, spacedim>(),
       fe,
       quadrature)
 {
@@ -4950,10 +4958,7 @@ FESubfaceValues<dim, spacedim>::FESubfaceValues(
   : FEFaceValuesBase<dim, spacedim>(
       fe.n_dofs_per_cell(),
       update_flags,
-      // TODO: We should query the default mapping for the kind of cell
-      // represented by 'fe' and 'q':
-      ReferenceCell::get_default_linear_mapping<dim, spacedim>(
-        ReferenceCell::get_hypercube(dim)),
+      fe.reference_cell().template get_default_linear_mapping<dim, spacedim>(),
       fe,
       quadrature)
 {

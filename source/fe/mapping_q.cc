@@ -544,6 +544,38 @@ MappingQ<dim, spacedim>::clone() const
 
 
 
+template <int dim, int spacedim>
+BoundingBox<spacedim>
+MappingQ<dim, spacedim>::get_bounding_box(
+  const typename Triangulation<dim, spacedim>::cell_iterator &cell) const
+{
+  if (cell->has_boundary_lines() || use_mapping_q_on_all_cells ||
+      (dim != spacedim))
+    return BoundingBox<spacedim>(
+      qp_mapping->compute_mapping_support_points(cell));
+  else
+    return BoundingBox<spacedim>(q1_mapping->get_vertices(cell));
+}
+
+
+
+template <int dim, int spacedim>
+bool
+MappingQ<dim, spacedim>::is_compatible_with(
+  const ReferenceCell &reference_cell) const
+{
+  Assert(dim == reference_cell.get_dimension(),
+         ExcMessage("The dimension of your mapping (" +
+                    Utilities::to_string(dim) +
+                    ") and the reference cell cell_type (" +
+                    Utilities::to_string(reference_cell.get_dimension()) +
+                    " ) do not agree."));
+
+  return reference_cell.is_hyper_cube();
+}
+
+
+
 // explicit instantiations
 #include "mapping_q.inst"
 

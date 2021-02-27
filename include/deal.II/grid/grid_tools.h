@@ -176,7 +176,8 @@ namespace GridTools
   double
   volume(const Triangulation<dim, spacedim> &tria,
          const Mapping<dim, spacedim> &      mapping =
-           (StaticMappingQ1<dim, spacedim>::mapping));
+           (ReferenceCells::get_hypercube<dim>()
+              .template get_default_linear_mapping<dim, spacedim>()));
 
   /**
    * Return an approximation of the diameter of the smallest active cell of a
@@ -190,9 +191,11 @@ namespace GridTools
    */
   template <int dim, int spacedim>
   double
-  minimal_cell_diameter(const Triangulation<dim, spacedim> &triangulation,
-                        const Mapping<dim, spacedim> &      mapping =
-                          (StaticMappingQ1<dim, spacedim>::mapping));
+  minimal_cell_diameter(
+    const Triangulation<dim, spacedim> &triangulation,
+    const Mapping<dim, spacedim> &      mapping =
+      (ReferenceCells::get_hypercube<dim>()
+         .template get_default_linear_mapping<dim, spacedim>()));
 
   /**
    * Return an approximation of the diameter of the largest active cell of a
@@ -206,9 +209,11 @@ namespace GridTools
    */
   template <int dim, int spacedim>
   double
-  maximal_cell_diameter(const Triangulation<dim, spacedim> &triangulation,
-                        const Mapping<dim, spacedim> &      mapping =
-                          (StaticMappingQ1<dim, spacedim>::mapping));
+  maximal_cell_diameter(
+    const Triangulation<dim, spacedim> &triangulation,
+    const Mapping<dim, spacedim> &      mapping =
+      (ReferenceCells::get_hypercube<dim>()
+         .template get_default_linear_mapping<dim, spacedim>()));
 
   /**
    * Given a list of vertices (typically obtained using
@@ -1036,9 +1041,11 @@ namespace GridTools
    */
   template <int dim, int spacedim>
   std::map<unsigned int, Point<spacedim>>
-  extract_used_vertices(const Triangulation<dim, spacedim> &container,
-                        const Mapping<dim, spacedim> &      mapping =
-                          StaticMappingQ1<dim, spacedim>::mapping);
+  extract_used_vertices(
+    const Triangulation<dim, spacedim> &container,
+    const Mapping<dim, spacedim> &      mapping =
+      (ReferenceCells::get_hypercube<dim>()
+         .template get_default_linear_mapping<dim, spacedim>()));
 
   /**
    * Find and return the index of the closest vertex to a given point in the
@@ -1865,7 +1872,8 @@ namespace GridTools
     const typename Triangulation<dim, spacedim>::active_cell_iterator &cell,
     const Point<spacedim> &                                            position,
     const Mapping<dim, spacedim> &                                     mapping =
-      StaticMappingQ1<dim, spacedim>::mapping);
+      (ReferenceCells::get_hypercube<dim>()
+         .template get_default_linear_mapping<dim, spacedim>()));
 
   /**
    * Compute a globally unique index for each vertex and hanging node
@@ -2101,6 +2109,18 @@ namespace GridTools
   partition_multigrid_levels(Triangulation<dim, spacedim> &triangulation);
 
   /**
+   * This function allows to ask for the owning subdomain of cells identified by
+   * CellId objects that do not have to exist on the current process.
+   *
+   * @note This function has not been implemented yet for
+   *   parallel::fullydistributed::Triangulation.
+   */
+  template <int dim, int spacedim>
+  std::vector<types::subdomain_id>
+  get_subdomain_association(const Triangulation<dim, spacedim> &triangulation,
+                            const std::vector<CellId> &         cell_ids);
+
+  /**
    * For each active cell, return in the output array to which subdomain (as
    * given by the <tt>cell->subdomain_id()</tt> function) it belongs. The
    * output array is supposed to have the right size already when calling this
@@ -2134,7 +2154,6 @@ namespace GridTools
   count_cells_with_subdomain_association(
     const Triangulation<dim, spacedim> &triangulation,
     const types::subdomain_id           subdomain);
-
 
   /**
    * For a triangulation, return a mask that represents which of its vertices
@@ -2931,7 +2950,7 @@ namespace GridTools
                              const DataType &)> &        unpack,
     const std::function<bool(const typename MeshType::active_cell_iterator &)>
       &cell_filter =
-        [](const typename MeshType::active_cell_iterator &) { return true; });
+        always_return<typename MeshType::active_cell_iterator, bool>{true});
 
   /**
    * Exchange arbitrary data of type @p DataType provided by the function
@@ -2951,9 +2970,9 @@ namespace GridTools
       const typename MeshType::level_cell_iterator &)> &pack,
     const std::function<void(const typename MeshType::level_cell_iterator &,
                              const DataType &)> &       unpack,
-    const std::function<bool(const typename MeshType::level_cell_iterator &)>
-      &cell_filter =
-        [](const typename MeshType::level_cell_iterator &) { return true; });
+    const std::function<bool(const typename MeshType::level_cell_iterator &)> &
+      cell_filter = always_return<typename MeshType::level_cell_iterator, bool>{
+        true});
 
   /* Exchange with all processors of the MPI communicator @p mpi_communicator the vector of bounding
    * boxes @p local_bboxes.
@@ -3252,8 +3271,8 @@ namespace GridTools
             if (cell->face(face)->has_children() &&
                 !cell->face(face)->at_boundary())
               {
-                Assert(cell->reference_cell_type() ==
-                         ReferenceCell::get_hypercube(dim),
+                Assert(cell->reference_cell() ==
+                         ReferenceCells::get_hypercube<dim>(),
                        ExcNotImplemented());
 
                 // this line has children
@@ -3272,8 +3291,8 @@ namespace GridTools
             if (cell->face(face)->has_children() &&
                 !cell->face(face)->at_boundary())
               {
-                Assert(cell->reference_cell_type() ==
-                         ReferenceCell::get_hypercube(dim),
+                Assert(cell->reference_cell() ==
+                         ReferenceCells::get_hypercube<dim>(),
                        ExcNotImplemented());
 
                 // this face has hanging nodes
@@ -3972,7 +3991,7 @@ namespace GridTools
     template <typename DataType,
               typename MeshType,
               typename MeshCellIteratorType>
-    void
+    inline void
     exchange_cell_data(
       const MeshType &mesh,
       const std::function<
@@ -4210,7 +4229,7 @@ namespace GridTools
   } // namespace internal
 
   template <typename DataType, typename MeshType>
-  void
+  inline void
   exchange_cell_data_to_ghosts(
     const MeshType &                                     mesh,
     const std::function<std_cxx17::optional<DataType>(
@@ -4248,7 +4267,7 @@ namespace GridTools
 
 
   template <typename DataType, typename MeshType>
-  void
+  inline void
   exchange_cell_data_to_level_ghosts(
     const MeshType &                                    mesh,
     const std::function<std_cxx17::optional<DataType>(

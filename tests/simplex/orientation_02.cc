@@ -17,6 +17,7 @@
 
 // Test a mesh with two tetrahedra for all possible orientations.
 
+#include <deal.II/grid/grid_generator.h>
 #include <deal.II/grid/reference_cell.h>
 #include <deal.II/grid/tria.h>
 
@@ -29,7 +30,7 @@ test(const unsigned int orientation)
 
 
   Triangulation<3> dummy, tria;
-  ReferenceCell::make_triangulation(ReferenceCell::Type::Tet, dummy);
+  GridGenerator::reference_cell(ReferenceCells::Tetrahedron, dummy);
 
   auto vertices = dummy.get_vertices();
 
@@ -43,12 +44,14 @@ test(const unsigned int orientation)
   }
 
   {
-    const auto &face     = dummy.begin()->face(face_no);
-    const auto  permuted = ReferenceCell::permute_according_orientation(
-      ReferenceCell::Type::Tri,
-      std::array<unsigned int, 3>{
-        {face->vertex_index(0), face->vertex_index(1), face->vertex_index(2)}},
-      orientation);
+    const auto &face = dummy.begin()->face(face_no);
+    const auto  permuted =
+      ReferenceCell(ReferenceCells::Triangle)
+        .permute_according_orientation(
+          std::array<unsigned int, 3>{{face->vertex_index(0),
+                                       face->vertex_index(1),
+                                       face->vertex_index(2)}},
+          orientation);
 
     auto direction =
       cross_product_3d(vertices[permuted[1]] - vertices[permuted[0]],
@@ -94,8 +97,9 @@ test(const unsigned int orientation)
   for (const auto l : face->line_indices())
     {
       const unsigned int l_ =
-        ReferenceCell::internal::Info::Tet().standard_to_real_face_line(
-          l, face_no, orientation);
+        ReferenceCells::Tetrahedron.standard_to_real_face_line(l,
+                                                               face_no,
+                                                               orientation);
 
       std::array<unsigned int, 2> a = {
         {face->line(l_)->vertex_index(0), face->line(l_)->vertex_index(1)}};

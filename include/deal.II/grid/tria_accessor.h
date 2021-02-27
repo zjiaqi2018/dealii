@@ -29,7 +29,9 @@
 #include <deal.II/grid/tria_iterator_base.h>
 #include <deal.II/grid/tria_iterator_selector.h>
 
+DEAL_II_DISABLE_EXTRA_DIAGNOSTICS
 #include <boost/container/small_vector.hpp>
+DEAL_II_ENABLE_EXTRA_DIAGNOSTICS
 
 #include <utility>
 
@@ -1636,8 +1638,8 @@ public:
   /**
    * Reference cell type of the current object.
    */
-  ReferenceCell::Type
-  reference_cell_type() const;
+  ReferenceCell
+  reference_cell() const;
 
   /**
    * Number of vertices.
@@ -1685,14 +1687,6 @@ public:
   /**
    * @}
    */
-
-protected:
-  /**
-   * Return additional information related to the current geometric entity
-   * type.
-   */
-  inline const ReferenceCell::internal::Info::Base &
-  reference_cell_info() const;
 
 private:
   /**
@@ -2717,8 +2711,8 @@ public:
   /**
    * Reference cell type of the current object.
    */
-  ReferenceCell::Type
-  reference_cell_type() const;
+  ReferenceCell
+  reference_cell() const;
 
   /**
    * Number of vertices.

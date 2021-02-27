@@ -14,14 +14,17 @@
 // ---------------------------------------------------------------------
 
 
-// Distribute Simplex::FE_Wedge on a DoFHandler.
+// Distribute FE_WedgeP on a DoFHandler.
 
 #include <deal.II/dofs/dof_handler.h>
 
+#include <deal.II/fe/fe_pyramid_p.h>
+#include <deal.II/fe/fe_simplex_p.h>
+#include <deal.II/fe/fe_simplex_p_bubbles.h>
+#include <deal.II/fe/fe_wedge_p.h>
+
 #include <deal.II/grid/grid_out.h>
 #include <deal.II/grid/tria.h>
-
-#include <deal.II/simplex/fe_lib.h>
 
 #include "../tests.h"
 
@@ -78,7 +81,7 @@ test_3()
   std::ofstream out("mesh.vtk");
   grid_out.write_vtk(tria, out);
 
-  Simplex::FE_WedgeP<dim, spacedim> fe(2);
+  FE_WedgeP<dim, spacedim> fe(2);
 
   DoFHandler<dim, spacedim> dof_handler(tria);
   dof_handler.distribute_dofs(fe);

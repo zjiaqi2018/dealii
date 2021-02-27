@@ -18,6 +18,7 @@
 
 #include <deal.II/base/config.h>
 
+#include <deal.II/base/communication_pattern_base.h>
 #include <deal.II/base/memory_space.h>
 #include <deal.II/base/memory_space_data.h>
 #include <deal.II/base/mpi.h>
@@ -105,8 +106,9 @@ namespace LinearAlgebra
      * <li> Besides the usual global access operator() it is also possible to
      * access vector entries in the local index space with the function @p
      * local_element(). Locally owned indices are placed first, [0,
-     * local_size()), and then all ghost indices follow after them
-     * contiguously, [local_size(), local_size()+n_ghost_entries()).
+     * locally_owned_size()), and then all ghost indices follow after them
+     * contiguously, [locally_owned_size(),
+     * locally_owned_size()+n_ghost_entries()).
      * </ul>
      *
      * Functions related to parallel functionality:
@@ -134,7 +136,7 @@ namespace LinearAlgebra
      * This vector can take two different states with respect to ghost
      * elements:
      * <ul>
-     * <li> After creation and whenever zero_out_ghosts() is called (or
+     * <li> After creation and whenever zero_out_ghost_values() is called (or
      * <code>operator= (0.)</code>), the vector does only allow writing into
      * ghost elements but not reading from ghost elements.
      * <li> After a call to update_ghost_values(), the vector does not allow
@@ -515,7 +517,7 @@ namespace LinearAlgebra
        * operation. However, global reduction operations like norms or the
        * inner product will always ignore ghost elements in order to avoid
        * counting the ghost data more than once. To allow writing to ghost
-       * elements again, call zero_out_ghosts().
+       * elements again, call zero_out_ghost_values().
        *
        * @see
        * @ref GlossGhostedVector "vectors with ghost elements"
@@ -605,9 +607,22 @@ namespace LinearAlgebra
        * After calling this method, read access to ghost elements of the
        * vector is forbidden and an exception is thrown. Only write access to
        * ghost elements is allowed in this state.
+       *
+       * @deprecated Use zero_out_ghost_values() instead.
+       */
+      DEAL_II_DEPRECATED_EARLY void
+      zero_out_ghosts() const;
+
+      /**
+       * This method zeros the entries on ghost dofs, but does not touch
+       * locally owned DoFs.
+       *
+       * After calling this method, read access to ghost elements of the
+       * vector is forbidden and an exception is thrown. Only write access to
+       * ghost elements is allowed in this state.
        */
       void
-      zero_out_ghosts() const;
+      zero_out_ghost_values() const;
 
       /**
        * Return whether the vector currently is in a state where ghost values
@@ -707,11 +722,10 @@ namespace LinearAlgebra
        * be moved to the device.
        */
       virtual void
-      import(
-        const LinearAlgebra::ReadWriteVector<Number> &  V,
-        VectorOperation::values                         operation,
-        std::shared_ptr<const CommunicationPatternBase> communication_pattern =
-          std::shared_ptr<const CommunicationPatternBase>()) override;
+      import(const LinearAlgebra::ReadWriteVector<Number> &V,
+             VectorOperation::values                       operation,
+             std::shared_ptr<const Utilities::MPI::CommunicationPatternBase>
+               communication_pattern = {}) override;
 
       /**
        * Return the scalar product of two vectors.
@@ -910,9 +924,19 @@ namespace LinearAlgebra
       /**
        * Return the local size of the vector, i.e., the number of indices
        * owned locally.
+       *
+       * @deprecated Use locally_owned_size() instead.
        */
+      DEAL_II_DEPRECATED_EARLY
       size_type
       local_size() const;
+
+      /**
+       * Return the local size of the vector, i.e., the number of indices
+       * owned locally.
+       */
+      size_type
+      locally_owned_size() const;
 
       /**
        * Return true if the given global index is in the local range of this
@@ -926,7 +950,7 @@ namespace LinearAlgebra
        * the C++ standard library by returning iterators to the start and end
        * of the <i>locally owned</i> elements of this vector.
        *
-       * It holds that end() - begin() == local_size().
+       * It holds that end() - begin() == locally_owned_size().
        *
        * @note For the CUDA memory space, the iterator points to memory on the
        * device.
@@ -1008,8 +1032,8 @@ namespace LinearAlgebra
       /**
        * Read access to the data field specified by @p local_index. Locally
        * owned indices can be accessed with indices
-       * <code>[0,local_size)</code>, and ghost indices with indices
-       * <code>[local_size,local_size+ n_ghost_entries]</code>.
+       * <code>[0,locally_owned_size)</code>, and ghost indices with indices
+       * <code>[locally_owned_size,locally_owned_size+ n_ghost_entries]</code>.
        *
        * Performance: Direct array access (fast).
        */
@@ -1019,8 +1043,8 @@ namespace LinearAlgebra
       /**
        * Read and write access to the data field specified by @p local_index.
        * Locally owned indices can be accessed with indices
-       * <code>[0,local_size)</code>, and ghost indices with indices
-       * <code>[local_size,local_size+n_ghosts]</code>.
+       * <code>[0,locally_owned_size())</code>, and ghost indices with indices
+       * <code>[locally_owned_size(), locally_owned_size()+n_ghosts]</code>.
        *
        * Performance: Direct array access (fast).
        */
@@ -1218,8 +1242,8 @@ namespace LinearAlgebra
         << "You tried to access element " << arg1
         << " of a distributed vector, but this element is not "
         << "stored on the current processor. Note: The range of "
-        << "locally owned elements is " << arg2 << " to " << arg3
-        << ", and there are " << arg4 << " ghost elements "
+        << "locally owned elements is [" << arg2 << "," << arg3
+        << "], and there are " << arg4 << " ghost elements "
         << "that this vector can access."
         << "\n\n"
         << "A common source for this kind of problem is that you "
@@ -1501,7 +1525,16 @@ namespace LinearAlgebra
     inline typename Vector<Number, MemorySpace>::size_type
     Vector<Number, MemorySpace>::local_size() const
     {
-      return partitioner->local_size();
+      return locally_owned_size();
+    }
+
+
+
+    template <typename Number, typename MemorySpace>
+    inline typename Vector<Number, MemorySpace>::size_type
+    Vector<Number, MemorySpace>::locally_owned_size() const
+    {
+      return partitioner->locally_owned_size();
     }
 
 
@@ -1553,7 +1586,7 @@ namespace LinearAlgebra
     Vector<Number, MemorySpace>::end()
     {
       return internal::Policy<Number, MemorySpace>::begin(data) +
-             partitioner->local_size();
+             partitioner->locally_owned_size();
     }
 
 
@@ -1563,7 +1596,7 @@ namespace LinearAlgebra
     Vector<Number, MemorySpace>::end() const
     {
       return internal::Policy<Number, MemorySpace>::begin(data) +
-             partitioner->local_size();
+             partitioner->locally_owned_size();
     }
 
 
@@ -1589,7 +1622,7 @@ namespace LinearAlgebra
           partitioner->ghost_indices().is_element(global_index),
         ExcAccessToNonLocalElement(global_index,
                                    partitioner->local_range().first,
-                                   partitioner->local_range().second,
+                                   partitioner->local_range().second - 1,
                                    partitioner->ghost_indices().n_elements()));
       // do not allow reading a vector which is not in ghost mode
       Assert(partitioner->in_local_range(global_index) ||
@@ -1613,7 +1646,7 @@ namespace LinearAlgebra
           partitioner->ghost_indices().is_element(global_index),
         ExcAccessToNonLocalElement(global_index,
                                    partitioner->local_range().first,
-                                   partitioner->local_range().second,
+                                   partitioner->local_range().second - 1,
                                    partitioner->ghost_indices().n_elements()));
       // we would like to prevent reading ghosts from a vector that does not
       // have them imported, but this is not possible because we might be in a
@@ -1653,10 +1686,10 @@ namespace LinearAlgebra
              ExcMessage(
                "This function is only implemented for the Host memory space"));
       AssertIndexRange(local_index,
-                       partitioner->local_size() +
+                       partitioner->locally_owned_size() +
                          partitioner->n_ghost_indices());
       // do not allow reading a vector which is not in ghost mode
-      Assert(local_index < local_size() || vector_is_ghosted == true,
+      Assert(local_index < locally_owned_size() || vector_is_ghosted == true,
              ExcMessage("You tried to read a ghost element of this vector, "
                         "but it has not imported its ghost values."));
 
@@ -1674,7 +1707,7 @@ namespace LinearAlgebra
                "This function is only implemented for the Host memory space"));
 
       AssertIndexRange(local_index,
-                       partitioner->local_size() +
+                       partitioner->locally_owned_size() +
                          partitioner->n_ghost_indices());
 
       return data.values[local_index];

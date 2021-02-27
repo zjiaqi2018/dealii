@@ -1713,7 +1713,7 @@ namespace internal
         {
           Assert(
             dof_handler.hp_capability_enabled == true,
-            (typename DoFHandler<dim, spacedim>::ExcNotAvailableWithoutHP()));
+            (typename DoFHandler<dim, spacedim>::ExcOnlyAvailableWithHP()));
 
           if (const dealii::parallel::shared::Triangulation<dim, spacedim> *tr =
                 dynamic_cast<
@@ -2559,47 +2559,31 @@ DoFHandler<dim, spacedim>::distribute_dofs(
 #endif
     }
 
-  // We would like to enumerate all dofs for shared::Triangulations. If an
-  // underlying shared::Tria allows artificial cells, we need to restore the
-  // true cell owners temporarily. We save the current set of subdomain ids, set
-  // subdomain ids to the "true" owner of each cell, and later restore these
-  // flags.
-  std::vector<types::subdomain_id>                      saved_subdomain_ids;
-  const parallel::shared::Triangulation<dim, spacedim> *shared_tria =
-    (dynamic_cast<const parallel::shared::Triangulation<dim, spacedim> *>(
-      &this->get_triangulation()));
-  if (shared_tria != nullptr && shared_tria->with_artificial_cells())
-    {
-      saved_subdomain_ids.resize(shared_tria->n_active_cells());
+  {
+    // We would like to enumerate all dofs for shared::Triangulations. If an
+    // underlying shared::Tria allows artificial cells, we need to restore the
+    // true cell owners temporarily.
+    // We use the TemporarilyRestoreSubdomainIds class for this purpose: we save
+    // the current set of subdomain ids, set subdomain ids to the "true" owner
+    // of each cell upon construction of the TemporarilyRestoreSubdomainIds
+    // object, and later restore these flags when it is destroyed.
+    const internal::parallel::shared::TemporarilyRestoreSubdomainIds<dim,
+                                                                     spacedim>
+      subdomain_modifier(this->get_triangulation());
 
-      const std::vector<types::subdomain_id> &true_subdomain_ids =
-        shared_tria->get_true_subdomain_ids_of_cells();
-
-      for (const auto &cell : shared_tria->active_cell_iterators())
-        {
-          const unsigned int index   = cell->active_cell_index();
-          saved_subdomain_ids[index] = cell->subdomain_id();
-          cell->set_subdomain_id(true_subdomain_ids[index]);
-        }
-    }
-
-  // Adjust size of levels to the triangulation. Note that we still have to
-  // allocate space for all degrees of freedom on this mesh (including ghost
-  // and cells that are entirely stored on different processors), though we
-  // may not assign numbers to some of them (i.e. they will remain at
-  // invalid_dof_index). We need to allocate the space because we will want
-  // to be able to query the dof_indices on each cell, and simply be told
-  // that we don't know them on some cell (i.e. get back invalid_dof_index)
-  if (hp_capability_enabled)
-    internal::hp::DoFHandlerImplementation::Implementation::reserve_space(
-      *this);
-  else
-    internal::DoFHandlerImplementation::Implementation::reserve_space(*this);
-
-  // undo the subdomain modification
-  if (shared_tria != nullptr && shared_tria->with_artificial_cells())
-    for (const auto &cell : shared_tria->active_cell_iterators())
-      cell->set_subdomain_id(saved_subdomain_ids[cell->active_cell_index()]);
+    // Adjust size of levels to the triangulation. Note that we still have to
+    // allocate space for all degrees of freedom on this mesh (including ghost
+    // and cells that are entirely stored on different processors), though we
+    // may not assign numbers to some of them (i.e. they will remain at
+    // invalid_dof_index). We need to allocate the space because we will want
+    // to be able to query the dof_indices on each cell, and simply be told
+    // that we don't know them on some cell (i.e. get back invalid_dof_index)
+    if (hp_capability_enabled)
+      internal::hp::DoFHandlerImplementation::Implementation::reserve_space(
+        *this);
+    else
+      internal::DoFHandlerImplementation::Implementation::reserve_space(*this);
+  }
 
   // hand the actual work over to the policy
   this->number_cache = this->policy->distribute_dofs();
@@ -3043,7 +3027,9 @@ DoFHandler<dim, spacedim>::connect_to_triangulation_signals()
 {
   // connect functions to signals of the underlying triangulation
   this->tria_listeners.push_back(this->tria->signals.create.connect(
-    [this]() { this->create_active_fe_table(); }));
+    [this]() { this->reinit(*(this->tria)); }));
+  this->tria_listeners.push_back(
+    this->tria->signals.clear.connect([this]() { this->clear(); }));
 
   // attach corresponding callback functions dealing with the transfer of
   // active FE indices depending on the type of triangulation
@@ -3115,7 +3101,7 @@ template <int dim, int spacedim>
 void
 DoFHandler<dim, spacedim>::create_active_fe_table()
 {
-  AssertThrow(hp_capability_enabled == true, ExcNotAvailableWithoutHP());
+  AssertThrow(hp_capability_enabled == true, ExcOnlyAvailableWithHP());
 
 
   // Create sufficiently many hp::DoFLevels.

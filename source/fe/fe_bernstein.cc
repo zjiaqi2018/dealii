@@ -36,13 +36,13 @@ DEAL_II_NAMESPACE_OPEN
 
 template <int dim, int spacedim>
 FE_Bernstein<dim, spacedim>::FE_Bernstein(const unsigned int degree)
-  : FE_Q_Base<TensorProductPolynomials<dim>, dim, spacedim>(
-      this->renumber_bases(degree),
-      FiniteElementData<dim>(this->get_dpo_vector(degree),
-                             1,
-                             degree,
-                             FiniteElementData<dim>::H1),
-      std::vector<bool>(1, false))
+  : FE_Q_Base<dim, spacedim>(this->renumber_bases(degree),
+                             FiniteElementData<dim>(this->get_dpo_vector(
+                                                      degree),
+                                                    1,
+                                                    degree,
+                                                    FiniteElementData<dim>::H1),
+                             std::vector<bool>(1, false))
 {}
 
 
@@ -155,10 +155,10 @@ FE_Bernstein<dim, spacedim>::get_subface_interpolation_matrix(
       // be done for the face orientation flag in 3D.
       const Quadrature<dim> subface_quadrature =
         subface == numbers::invalid_unsigned_int ?
-          QProjector<dim>::project_to_face(this->reference_cell_type(),
+          QProjector<dim>::project_to_face(this->reference_cell(),
                                            quad_face_support,
                                            0) :
-          QProjector<dim>::project_to_subface(this->reference_cell_type(),
+          QProjector<dim>::project_to_subface(this->reference_cell(),
                                               quad_face_support,
                                               0,
                                               subface);

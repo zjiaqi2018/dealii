@@ -208,8 +208,8 @@ MGTransferMatrixFree<dim, Number>::prolongate(
           this->vector_partitioners[to_level].get())
         this->ghosted_level_vector[to_level].reinit(
           this->vector_partitioners[to_level]);
-      AssertDimension(this->ghosted_level_vector[to_level].local_size(),
-                      dst.local_size());
+      AssertDimension(this->ghosted_level_vector[to_level].locally_owned_size(),
+                      dst.locally_owned_size());
     }
 
   const LinearAlgebra::distributed::Vector<Number> &src_vec =
@@ -253,7 +253,7 @@ MGTransferMatrixFree<dim, Number>::prolongate(
     dst.copy_locally_owned_data_from(this->ghosted_level_vector[to_level]);
 
   if (src_inplace == true)
-    src.zero_out_ghosts();
+    src.zero_out_ghost_values();
 }
 
 
@@ -287,8 +287,9 @@ MGTransferMatrixFree<dim, Number>::restrict_and_add(
           this->vector_partitioners[from_level - 1].get())
         this->ghosted_level_vector[from_level - 1].reinit(
           this->vector_partitioners[from_level - 1]);
-      AssertDimension(this->ghosted_level_vector[from_level - 1].local_size(),
-                      dst.local_size());
+      AssertDimension(
+        this->ghosted_level_vector[from_level - 1].locally_owned_size(),
+        dst.locally_owned_size());
       this->ghosted_level_vector[from_level - 1] = 0.;
     }
 
@@ -330,7 +331,7 @@ MGTransferMatrixFree<dim, Number>::restrict_and_add(
     dst += dst_vec;
 
   if (src_inplace == true)
-    src.zero_out_ghosts();
+    src.zero_out_ghost_values();
 }
 
 

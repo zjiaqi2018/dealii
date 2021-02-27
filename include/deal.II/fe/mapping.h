@@ -375,11 +375,11 @@ public:
    * displacements or choose completely different locations, e.g.,
    * MappingQEulerian, MappingQ1Eulerian, or MappingFEField.
    *
-   * This function returns the bounding box containing all the vertices of the
-   * cell, as returned by the get_vertices() method. Beware of the fact that
-   * for higher order mappings this bounding box is only an approximation of the
-   * true bounding box, since it does not take into account curved faces, and it
-   * may be smaller than the true bounding box.
+   * For linear mappings, this function returns the bounding box containing all
+   * the vertices of the cell, as returned by the get_vertices() method. For
+   * higher order mappings defined through support points, the bounding box is
+   * only guaranteed to contain all the support points, and it is, in general,
+   * only an approximation of the true bounding box, which may be larger.
    *
    * @param[in] cell The cell for which you want to compute the bounding box
    */
@@ -400,6 +400,13 @@ public:
    */
   virtual bool
   preserves_vertex_locations() const = 0;
+
+  /**
+   * Returns if this instance of Mapping is compatible with the type of cell
+   * in @p reference_cell.
+   */
+  virtual bool
+  is_compatible_with(const ReferenceCell &reference_cell) const = 0;
 
   /**
    * @name Mapping points between reference and real cells
@@ -1276,6 +1283,18 @@ public:
   friend class FEFaceValues<dim, spacedim>;
   friend class FESubfaceValues<dim, spacedim>;
 };
+
+
+/**
+ * Return a default linear mapping that works for the given triangulation.
+ * Internally, this function calls the function above for the reference
+ * cell used by the given triangulation, assuming that the triangulation
+ * uses only a single cell type. If the triangulation uses mixed cell
+ * types, then this function will trigger an exception.
+ */
+template <int dim, int spacedim>
+const Mapping<dim, spacedim> &
+get_default_linear_mapping(const Triangulation<dim, spacedim> &triangulation);
 
 
 DEAL_II_NAMESPACE_CLOSE

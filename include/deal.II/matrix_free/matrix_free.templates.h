@@ -23,6 +23,7 @@
 #include <deal.II/base/mpi.h>
 #include <deal.II/base/mpi_consensus_algorithms.h>
 #include <deal.II/base/polynomials_piecewise.h>
+#include <deal.II/base/quadrature_lib.h>
 #include <deal.II/base/tensor_product_polynomials.h>
 #include <deal.II/base/utilities.h>
 
@@ -40,8 +41,6 @@
 #include <deal.II/matrix_free/face_info.h>
 #include <deal.II/matrix_free/face_setup_internal.h>
 #include <deal.II/matrix_free/matrix_free.h>
-
-#include <deal.II/simplex/quadrature_lib.h>
 
 #ifdef DEAL_II_WITH_TBB
 #  include <deal.II/base/parallel.h>
@@ -1471,7 +1470,7 @@ MatrixFree<dim, Number, VectorizedArrayType>::initialize_indices(
     shape_info.size(0), shape_info.size(2));
   {
     Quadrature<dim> quad(QGauss<dim>(1));
-    Quadrature<dim> quad_simplex(Simplex::QGauss<dim>(1));
+    Quadrature<dim> quad_simplex(QGaussSimplex<dim>(1));
     for (unsigned int no = 0, c = 0; no < dof_handlers.size(); no++)
       for (unsigned int b = 0;
            b < dof_handlers[no]->get_fe(0).n_base_elements();
@@ -1480,8 +1479,8 @@ MatrixFree<dim, Number, VectorizedArrayType>::initialize_indices(
              fe_no < dof_handlers[no]->get_fe_collection().size();
              ++fe_no)
           shape_info_dummy(c, fe_no).reinit(
-            dof_handlers[no]->get_fe(fe_no).reference_cell_type() ==
-                ReferenceCell::get_hypercube(dim) ?
+            dof_handlers[no]->get_fe(fe_no).reference_cell() ==
+                ReferenceCells::get_hypercube<dim>() ?
               quad :
               quad_simplex,
             dof_handlers[no]->get_fe(fe_no),

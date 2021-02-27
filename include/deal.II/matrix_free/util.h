@@ -21,8 +21,11 @@
 #include <deal.II/base/config.h>
 
 #include <deal.II/base/quadrature.h>
+#include <deal.II/base/quadrature_lib.h>
 
-#include <deal.II/simplex/quadrature_lib.h>
+#include <deal.II/grid/reference_cell.h>
+
+#include <deal.II/hp/q_collection.h>
 
 DEAL_II_NAMESPACE_OPEN
 
@@ -37,12 +40,76 @@ namespace internal
     {
       if (dim == 2 || dim == 3)
         for (unsigned int i = 1; i <= 3; ++i)
-          if (quad == Simplex::QGauss<dim>(i))
-            return Simplex::QGauss<dim - 1>(i);
+          if (quad == QGaussSimplex<dim>(i))
+            return QGaussSimplex<dim - 1>(i);
 
       AssertThrow(false, ExcNotImplemented());
 
       return Quadrature<dim - 1>();
+    }
+
+    template <int dim>
+    inline std::pair<dealii::ReferenceCell, dealii::hp::QCollection<dim - 1>>
+    get_face_quadrature_collection(const Quadrature<dim> &quad,
+                                   const bool             do_assert = true)
+    {
+      if (dim == 2 || dim == 3)
+        {
+          for (unsigned int i = 1; i <= 4; ++i)
+            if (quad == QGaussSimplex<dim>(i))
+              {
+                QGaussSimplex<dim - 1> tri(i);
+
+                if (dim == 2)
+                  return {ReferenceCells::Triangle,
+                          dealii::hp::QCollection<dim - 1>(tri, tri, tri)};
+                else
+                  return {ReferenceCells::Tetrahedron,
+                          dealii::hp::QCollection<dim - 1>(tri, tri, tri, tri)};
+              }
+
+          for (unsigned int i = 1; i <= 5; ++i)
+            if (quad == QWitherdenVincentSimplex<dim>(i))
+              {
+                QWitherdenVincentSimplex<dim - 1> tri(i);
+
+                if (dim == 2)
+                  return {ReferenceCells::Triangle,
+                          dealii::hp::QCollection<dim - 1>(tri, tri, tri)};
+                else
+                  return {ReferenceCells::Tetrahedron,
+                          dealii::hp::QCollection<dim - 1>(tri, tri, tri, tri)};
+              }
+        }
+
+      if (dim == 3)
+        for (unsigned int i = 1; i <= 3; ++i)
+          if (quad == QGaussWedge<dim>(i))
+            {
+              QGauss<dim - 1>        quad(i);
+              QGaussSimplex<dim - 1> tri(i);
+
+              return {
+                ReferenceCells::Wedge,
+                dealii::hp::QCollection<dim - 1>(tri, tri, quad, quad, quad)};
+            }
+
+      if (dim == 3)
+        for (unsigned int i = 1; i <= 2; ++i)
+          if (quad == QGaussPyramid<dim>(i))
+            {
+              QGauss<dim - 1>        quad(i);
+              QGaussSimplex<dim - 1> tri(i);
+
+              return {
+                ReferenceCells::Pyramid,
+                dealii::hp::QCollection<dim - 1>(quad, tri, tri, tri, tri)};
+            }
+
+      if (do_assert)
+        AssertThrow(false, ExcNotImplemented());
+
+      return {ReferenceCells::Invalid, dealii::hp::QCollection<dim - 1>()};
     }
 
   } // end of namespace MatrixFreeFunctions

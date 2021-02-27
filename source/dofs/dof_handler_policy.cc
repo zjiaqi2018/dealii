@@ -216,7 +216,7 @@ namespace internal
         {
           Assert(
             dof_handler.hp_capability_enabled == true,
-            (typename DoFHandler<dim, spacedim>::ExcNotAvailableWithoutHP()));
+            (typename DoFHandler<dim, spacedim>::ExcOnlyAvailableWithHP()));
 
           std::map<types::global_dof_index, types::global_dof_index>
             dof_identities;
@@ -374,9 +374,8 @@ namespace internal
         compute_line_dof_identities(const DoFHandler<1, spacedim> &dof_handler)
         {
           (void)dof_handler;
-          Assert(
-            dof_handler.hp_capability_enabled == true,
-            (typename DoFHandler<1, spacedim>::ExcNotAvailableWithoutHP()));
+          Assert(dof_handler.hp_capability_enabled == true,
+                 (typename DoFHandler<1, spacedim>::ExcOnlyAvailableWithHP()));
 
           return std::map<types::global_dof_index, types::global_dof_index>();
         }
@@ -389,7 +388,7 @@ namespace internal
         {
           Assert(
             dof_handler.hp_capability_enabled == true,
-            (typename DoFHandler<dim, spacedim>::ExcNotAvailableWithoutHP()));
+            (typename DoFHandler<dim, spacedim>::ExcOnlyAvailableWithHP()));
 
           std::map<types::global_dof_index, types::global_dof_index>
             dof_identities;
@@ -743,7 +742,7 @@ namespace internal
           (void)dof_handler;
           Assert(
             dof_handler.hp_capability_enabled == true,
-            (typename DoFHandler<dim, spacedim>::ExcNotAvailableWithoutHP()));
+            (typename DoFHandler<dim, spacedim>::ExcOnlyAvailableWithHP()));
 
           // this function should only be called for dim<3 where there are
           // no quad dof identies. for dim==3, the specialization below should
@@ -758,9 +757,8 @@ namespace internal
         static std::map<types::global_dof_index, types::global_dof_index>
         compute_quad_dof_identities(const DoFHandler<3, spacedim> &dof_handler)
         {
-          Assert(
-            dof_handler.hp_capability_enabled == true,
-            (typename DoFHandler<3, spacedim>::ExcNotAvailableWithoutHP()));
+          Assert(dof_handler.hp_capability_enabled == true,
+                 (typename DoFHandler<3, spacedim>::ExcOnlyAvailableWithHP()));
 
           const int dim = 3;
 
@@ -837,8 +835,8 @@ namespace internal
                                 dof_handler.get_fe(other_fe_index),
                                 quad_dof_identities
                                   [most_dominating_fe_index][other_fe_index]
-                                  [cell->quad(q)->reference_cell_type() ==
-                                   ReferenceCell::Type::Quad],
+                                  [cell->quad(q)->reference_cell() ==
+                                   dealii::ReferenceCells::Quadrilateral],
                                 most_dominating_fe_index_face_no);
 
                             for (const auto &identity : identities)
@@ -1066,7 +1064,7 @@ namespace internal
         {
           Assert(
             dof_handler.hp_capability_enabled == true,
-            (typename DoFHandler<dim, spacedim>::ExcNotAvailableWithoutHP()));
+            (typename DoFHandler<dim, spacedim>::ExcOnlyAvailableWithHP()));
 
           // Note: we may wish to have something here similar to what
           // we do for lines and quads, namely that we only identify
@@ -1223,9 +1221,8 @@ namespace internal
           DoFHandler<1, spacedim> &dof_handler)
         {
           (void)dof_handler;
-          Assert(
-            dof_handler.hp_capability_enabled == true,
-            (typename DoFHandler<1, spacedim>::ExcNotAvailableWithoutHP()));
+          Assert(dof_handler.hp_capability_enabled == true,
+                 (typename DoFHandler<1, spacedim>::ExcOnlyAvailableWithHP()));
         }
 
 
@@ -1236,7 +1233,7 @@ namespace internal
         {
           Assert(
             dof_handler.hp_capability_enabled == true,
-            (typename DoFHandler<dim, spacedim>::ExcNotAvailableWithoutHP()));
+            (typename DoFHandler<dim, spacedim>::ExcOnlyAvailableWithHP()));
 
           // we will mark lines that we have already treated, so first save and
           // clear the user flags on lines and later restore them
@@ -1499,7 +1496,7 @@ namespace internal
           (void)dof_handler;
           Assert(
             dof_handler.hp_capability_enabled == true,
-            (typename DoFHandler<dim, spacedim>::ExcNotAvailableWithoutHP()));
+            (typename DoFHandler<dim, spacedim>::ExcOnlyAvailableWithHP()));
 
           // this function should only be called for dim<3 where there are
           // no quad dof identies. for dim>=3, the specialization below should
@@ -1512,9 +1509,8 @@ namespace internal
         static void merge_invalid_quad_dofs_on_ghost_interfaces(
           DoFHandler<3, spacedim> &dof_handler)
         {
-          Assert(
-            dof_handler.hp_capability_enabled == true,
-            (typename DoFHandler<3, spacedim>::ExcNotAvailableWithoutHP()));
+          Assert(dof_handler.hp_capability_enabled == true,
+                 (typename DoFHandler<3, spacedim>::ExcOnlyAvailableWithHP()));
 
           const int dim = 3;
 
@@ -1594,8 +1590,8 @@ namespace internal
                                 dof_handler.get_fe(other_fe_index),
                                 quad_dof_identities
                                   [most_dominating_fe_index][other_fe_index]
-                                  [cell->quad(q)->reference_cell_type() ==
-                                   ReferenceCell::Type::Quad],
+                                  [cell->quad(q)->reference_cell() ==
+                                   dealii::ReferenceCells::Quadrilateral],
                                 most_dominating_fe_index_face_no);
 
                             for (const auto &identity : identities)
@@ -3026,25 +3022,16 @@ namespace internal
         const unsigned int n_procs =
           Utilities::MPI::n_mpi_processes(tr->get_communicator());
 
-        // If the underlying shared::Tria allows artificial cells,
-        // then save the current set of subdomain ids, and set
-        // subdomain ids to the "true" owner of each cell. we later
-        // restore these flags
-        std::vector<types::subdomain_id> saved_subdomain_ids;
-        if (tr->with_artificial_cells())
-          {
-            saved_subdomain_ids.resize(tr->n_active_cells());
-
-            const std::vector<types::subdomain_id> &true_subdomain_ids =
-              tr->get_true_subdomain_ids_of_cells();
-
-            for (const auto &cell : tr->active_cell_iterators())
-              {
-                const unsigned int index   = cell->active_cell_index();
-                saved_subdomain_ids[index] = cell->subdomain_id();
-                cell->set_subdomain_id(true_subdomain_ids[index]);
-              }
-          }
+        // If an underlying shared::Tria allows artificial cells, we need to
+        // restore the true cell owners temporarily.
+        // We use the TemporarilyRestoreSubdomainIds class for this purpose: we
+        // save the current set of subdomain ids, set subdomain ids to the
+        // "true" owner of each cell upon construction of the
+        // TemporarilyRestoreSubdomainIds object, and later restore these flags
+        // when it is destroyed.
+        const internal::parallel::shared::
+          TemporarilyRestoreSubdomainIds<dim, spacedim>
+            subdomain_modifier(*tr);
 
         // first let the sequential algorithm do its magic. it is going to
         // enumerate DoFs on all cells, regardless of owner
@@ -3157,12 +3144,6 @@ namespace internal
               start_index = end_index;
             }
         }
-
-        // finally, restore current subdomain ids
-        if (tr->with_artificial_cells())
-          for (const auto &cell : tr->active_cell_iterators())
-            cell->set_subdomain_id(
-              saved_subdomain_ids[cell->active_cell_index()]);
 
         // return a NumberCache object made up from the sets of locally
         // owned DoFs
@@ -3379,20 +3360,10 @@ namespace internal
             &this->dof_handler->get_triangulation()));
         Assert(tr != nullptr, ExcInternalError());
 
-        typename dealii::parallel::shared::Triangulation<dim, spacedim>::
-          active_cell_iterator
-            cell = this->dof_handler->get_triangulation().begin_active(),
-            endc = this->dof_handler->get_triangulation().end();
-        std::vector<types::subdomain_id> current_subdomain_ids(
-          tr->n_active_cells());
-        const std::vector<types::subdomain_id> &true_subdomain_ids =
-          tr->get_true_subdomain_ids_of_cells();
-        if (tr->with_artificial_cells())
-          for (unsigned int index = 0; cell != endc; cell++, index++)
-            {
-              current_subdomain_ids[index] = cell->subdomain_id();
-              cell->set_subdomain_id(true_subdomain_ids[index]);
-            }
+        // Set subdomain IDs to the "true" owner of each cell.
+        const internal::parallel::shared::
+          TemporarilyRestoreSubdomainIds<dim, spacedim>
+            subdomain_modifier(*tr);
 
         std::vector<types::global_dof_index> global_gathered_numbers(
           this->dof_handler->n_dofs(), 0);
@@ -3514,12 +3485,6 @@ namespace internal
         const NumberCache number_cache(
           DoFTools::locally_owned_dofs_per_subdomain(*this->dof_handler),
           this->dof_handler->get_triangulation().locally_owned_subdomain());
-
-        // restore artificial cells
-        cell = tr->begin_active();
-        if (tr->with_artificial_cells())
-          for (unsigned int index = 0; cell != endc; cell++, index++)
-            cell->set_subdomain_id(current_subdomain_ids[index]);
 
         return number_cache;
 #endif

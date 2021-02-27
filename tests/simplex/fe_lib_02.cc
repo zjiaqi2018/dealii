@@ -14,11 +14,15 @@
 // ---------------------------------------------------------------------
 
 
-// Evaluate Simplex::FE_P  and Simplex::FE_DGP at quadrature points.
+// Evaluate FE_SimplexP  and FE_SimplexDGP at quadrature points.
 
 
-#include <deal.II/simplex/fe_lib.h>
-#include <deal.II/simplex/quadrature_lib.h>
+#include <deal.II/base/quadrature_lib.h>
+
+#include <deal.II/fe/fe_pyramid_p.h>
+#include <deal.II/fe/fe_simplex_p.h>
+#include <deal.II/fe/fe_simplex_p_bubbles.h>
+#include <deal.II/fe/fe_wedge_p.h>
 
 #include "../tests.h"
 
@@ -51,12 +55,12 @@ main()
 {
   initlog();
 
-  test(Simplex::FE_P<2>(1), Simplex::QGauss<2>(2));
-  test(Simplex::FE_P<2>(2), Simplex::QGauss<2>(3));
-  test(Simplex::FE_P<3>(1), Simplex::QGauss<3>(2));
-  test(Simplex::FE_P<3>(2), Simplex::QGauss<3>(3));
-  test(Simplex::FE_DGP<2>(1), Simplex::QGauss<2>(2));
-  test(Simplex::FE_DGP<2>(2), Simplex::QGauss<2>(3));
-  test(Simplex::FE_DGP<3>(1), Simplex::QGauss<3>(2));
-  test(Simplex::FE_DGP<3>(2), Simplex::QGauss<3>(3));
+  test(FE_SimplexP<2>(1), QGaussSimplex<2>(2));
+  test(FE_SimplexP<2>(2), QGaussSimplex<2>(3));
+  test(FE_SimplexP<3>(1), QGaussSimplex<3>(2));
+  test(FE_SimplexP<3>(2), QGaussSimplex<3>(3));
+  test(FE_SimplexDGP<2>(1), QGaussSimplex<2>(2));
+  test(FE_SimplexDGP<2>(2), QGaussSimplex<2>(3));
+  test(FE_SimplexDGP<3>(1), QGaussSimplex<3>(2));
+  test(FE_SimplexDGP<3>(2), QGaussSimplex<3>(3));
 }

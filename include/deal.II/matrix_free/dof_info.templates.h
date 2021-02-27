@@ -1310,13 +1310,17 @@ namespace internal
           const std::function<void(
             const std::function<void(
               const unsigned int, const unsigned int, const bool)> &)> &loop) {
-          bool all_nodal = true;
+          bool all_nodal_and_tensorial = true;
           for (unsigned int c = 0; c < n_base_elements; ++c)
-            if (!shape_info(global_base_element_offset + c, 0)
-                   .data.front()
-                   .nodal_at_cell_boundaries)
-              all_nodal = false;
-          if (all_nodal == false)
+            {
+              const auto &si =
+                shape_info(global_base_element_offset + c, 0).data.front();
+              if (!si.nodal_at_cell_boundaries ||
+                  (si.element_type ==
+                   internal::MatrixFreeFunctions::ElementType::tensor_none))
+                all_nodal_and_tensorial = false;
+            }
+          if (all_nodal_and_tensorial == false)
             vector_partitioner_values = vector_partitioner;
           else
             {
@@ -1552,7 +1556,7 @@ namespace internal
       // touched by a cell
       AssertDimension(length, vectorization_length);
       const unsigned int n_components = start_components.back();
-      const unsigned int n_dofs       = vector_partitioner->local_size() +
+      const unsigned int n_dofs = vector_partitioner->locally_owned_size() +
                                   vector_partitioner->n_ghost_indices();
       std::vector<unsigned int> touched_first_by(
         (n_dofs + chunk_size_zero_vector - 1) / chunk_size_zero_vector,
@@ -1671,13 +1675,13 @@ namespace internal
                                 chunk_must_zero_vector,
                                 vector_zero_range_list_index,
                                 vector_zero_range_list,
-                                vector_partitioner->local_size());
+                                vector_partitioner->locally_owned_size());
 
       // the other two operations only work on the local range (without
       // ghosts), so we skip the latter parts of the vector now
-      touched_first_by.resize(
-        (vector_partitioner->local_size() + chunk_size_zero_vector - 1) /
-        chunk_size_zero_vector);
+      touched_first_by.resize((vector_partitioner->locally_owned_size() +
+                               chunk_size_zero_vector - 1) /
+                              chunk_size_zero_vector);
 
       // set the import indices in the vector partitioner to one index higher
       // to indicate that we want to process it first. This additional index
@@ -1693,11 +1697,11 @@ namespace internal
                                 chunk_must_do_pre,
                                 cell_loop_pre_list_index,
                                 cell_loop_pre_list,
-                                vector_partitioner->local_size());
+                                vector_partitioner->locally_owned_size());
 
-      touched_last_by.resize(
-        (vector_partitioner->local_size() + chunk_size_zero_vector - 1) /
-        chunk_size_zero_vector);
+      touched_last_by.resize((vector_partitioner->locally_owned_size() +
+                              chunk_size_zero_vector - 1) /
+                             chunk_size_zero_vector);
 
       // set the indices which were not touched by the cell loop (i.e.,
       // constrained indices) to the last valid partition index. Since
@@ -1720,7 +1724,7 @@ namespace internal
                                 chunk_must_do_post,
                                 cell_loop_post_list_index,
                                 cell_loop_post_list,
-                                vector_partitioner->local_size());
+                                vector_partitioner->locally_owned_size());
     }
 
 
@@ -1972,9 +1976,10 @@ namespace internal
     DoFInfo::compute_dof_renumbering(
       std::vector<types::global_dof_index> &renumbering)
     {
-      const unsigned int local_size = vector_partitioner->local_size();
+      const unsigned int locally_owned_size =
+        vector_partitioner->locally_owned_size();
       renumbering.resize(0);
-      renumbering.resize(local_size, numbers::invalid_dof_index);
+      renumbering.resize(locally_owned_size, numbers::invalid_dof_index);
 
       types::global_dof_index counter      = 0;
       const unsigned int      n_components = start_components.back();
@@ -2004,14 +2009,14 @@ namespace internal
                 for (unsigned int j = 0;
                      j < n_vectorization_lanes_filled[dof_access_cell][cell_no];
                      ++j)
-                  if (dof_ind[j * ndofs + i] < local_size)
+                  if (dof_ind[j * ndofs + i] < locally_owned_size)
                     if (renumbering[dof_ind[j * ndofs + i]] ==
                         numbers::invalid_dof_index)
                       renumbering[dof_ind[j * ndofs + i]] = counter++;
             }
         }
 
-      AssertIndexRange(counter, local_size + 1);
+      AssertIndexRange(counter, locally_owned_size + 1);
       for (types::global_dof_index &dof_index : renumbering)
         if (dof_index == numbers::invalid_dof_index)
           dof_index = counter++;
