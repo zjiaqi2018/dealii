@@ -73,7 +73,7 @@
 // file for this tutorial program:
 #include <deal.II/matrix_free/operators.h>
 
-#include "tests.h"
+#include "../tests.h"
 
 namespace Euler_DG
 {
