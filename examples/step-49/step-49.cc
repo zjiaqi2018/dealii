@@ -319,6 +319,33 @@ void grid_7()
   print_mesh_info(triangulation, "grid-7.vtu");
 }
 
+void grid_8()
+{
+  Triangulation<2> triangulation(Triangulation<2>::maximum_smoothing);
+  std::ifstream    grid_file("simplex_body_fitting.msh");
+  Assert(grid_file, ExcIO());
+
+  GridIn<2> gridin;
+  gridin.attach_triangulation(triangulation);
+  gridin.read_msh(grid_file);
+
+  print_mesh_info(triangulation, "original_mesh.vtu");
+
+  {
+    std::ofstream                   ofs("restart_mesh.dat");
+    boost::archive::binary_oarchive ar(ofs);
+    const unsigned int              version = 1;
+    triangulation.save(ar, version);
+  }
+  {
+    std::ifstream                   ifs("restart_mesh.dat");
+    boost::archive::binary_iarchive ar(ifs);
+    triangulation.clear();
+    const unsigned int version = 1;
+    triangulation.load(ar, version);
+    print_mesh_info(triangulation, "restart_mesh.vtu");
+  }
+}
 
 // @sect3{The main function}
 
@@ -328,13 +355,14 @@ int main()
 {
   try
     {
-      grid_1();
-      grid_2();
-      grid_3();
-      grid_4();
-      grid_5();
-      grid_6();
-      grid_7();
+      grid_8();
+      // grid_1();
+      // grid_2();
+      // grid_3();
+      // grid_4();
+      // grid_5();
+      // grid_6();
+      // grid_7();
     }
   catch (std::exception &exc)
     {
