@@ -322,14 +322,28 @@ void grid_7()
 void grid_8()
 {
   Triangulation<2> triangulation(Triangulation<2>::maximum_smoothing);
+  GridIn<2>        gridin(triangulation);
+
+#if 0
   std::ifstream    grid_file("simplex_body_fitting.msh");
   Assert(grid_file, ExcIO());
-
-  GridIn<2> gridin;
-  gridin.attach_triangulation(triangulation);
   gridin.read_msh(grid_file);
 
   print_mesh_info(triangulation, "original_mesh.vtu");
+
+  GridOut go;
+  go.write_msh(triangulation, "output.msh");
+
+  triangulation.clear();
+  gridin.read_msh("output.msh");
+
+  print_mesh_info(triangulation, "output.vtu");
+
+#else
+  gridin.read_msh("simplex_body_fitting.msh");
+#endif
+
+
 
   {
     std::ofstream                   ofs("restart_mesh.dat");
