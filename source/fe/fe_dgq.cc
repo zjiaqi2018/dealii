@@ -279,9 +279,17 @@ FE_DGQ<dim, spacedim>::get_interpolation_matrix(
   // DGQ element
   using FE = FiniteElement<dim, spacedim>;
   AssertThrow((dynamic_cast<const FE_DGQ<dim, spacedim> *>(&x_source_fe) !=
-               nullptr),
+               nullptr) ||
+                (dynamic_cast<const FE_Nothing<dim, spacedim> *>(
+                   &x_source_fe) != nullptr),
               typename FE::ExcInterpolationNotImplemented());
 
+  if (dynamic_cast<const FE_Nothing<dim, spacedim> *>(&x_source_fe) != nullptr)
+    {
+      interpolation_matrix.clear();
+      (void)interpolation_matrix;
+      return;
+    }
   // ok, source is a Q element, so
   // we will be able to do the work
   const FE_DGQ<dim, spacedim> &source_fe =
@@ -366,7 +374,9 @@ FE_DGQ<dim, spacedim>::get_face_interpolation_matrix(
   (void)interpolation_matrix;
   using FE = FiniteElement<dim, spacedim>;
   AssertThrow((dynamic_cast<const FE_DGQ<dim, spacedim> *>(&x_source_fe) !=
-               nullptr),
+                 nullptr ||
+               (dynamic_cast<const FE_Nothing<dim, spacedim> *>(&x_source_fe) !=
+                nullptr)),
               typename FE::ExcInterpolationNotImplemented());
 
   Assert(interpolation_matrix.m() == 0,
@@ -394,7 +404,9 @@ FE_DGQ<dim, spacedim>::get_subface_interpolation_matrix(
   (void)interpolation_matrix;
   using FE = FiniteElement<dim, spacedim>;
   AssertThrow((dynamic_cast<const FE_DGQ<dim, spacedim> *>(&x_source_fe) !=
-               nullptr),
+                 nullptr ||
+               (dynamic_cast<const FE_Nothing<dim, spacedim> *>(&x_source_fe) !=
+                nullptr)),
               typename FE::ExcInterpolationNotImplemented());
 
   Assert(interpolation_matrix.m() == 0,
