@@ -382,7 +382,9 @@ FE_DGQ<dim, spacedim>::get_face_interpolation_matrix(
   (void)interpolation_matrix;
   using FE = FiniteElement<dim, spacedim>;
   AssertThrow((dynamic_cast<const FE_DGQ<dim, spacedim> *>(&x_source_fe) !=
-               nullptr),
+                 nullptr ||
+               (dynamic_cast<const FE_Nothing<dim, spacedim> *>(&x_source_fe) !=
+                nullptr)),
               typename FE::ExcInterpolationNotImplemented());
 
   Assert(interpolation_matrix.m() == 0,
@@ -410,7 +412,9 @@ FE_DGQ<dim, spacedim>::get_subface_interpolation_matrix(
   (void)interpolation_matrix;
   using FE = FiniteElement<dim, spacedim>;
   AssertThrow((dynamic_cast<const FE_DGQ<dim, spacedim> *>(&x_source_fe) !=
-               nullptr),
+                 nullptr ||
+               (dynamic_cast<const FE_Nothing<dim, spacedim> *>(&x_source_fe) !=
+                nullptr)),
               typename FE::ExcInterpolationNotImplemented());
 
   Assert(interpolation_matrix.m() == 0,
